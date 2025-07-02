@@ -1,57 +1,113 @@
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# syntax=docker/dockerfile:1
 
-# Installer git et maven
-RUN apk add --no-cache git maven
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
 
-# Cloner Mason d'abord
-WORKDIR /build
-RUN git clone https://github.com/ialame/mason.git mason
-WORKDIR /build/mason
-RUN git checkout main
-RUN mvn clean install -DskipTests
+# Arguments de build
+ARG MASON_REPO_URL=git@bitbucket.org:pcafxc/mason.git
+ARG MASON_BRANCH=feature/RETRIEVER-511
+ARG PAINTER_REPO_URL=git@bitbucket.org:pcafxc/painter.git
+ARG PAINTER_BRANCH=feature/card-manager-511
+ARG GESTIONCARTE_REPO_URL=git@bitbucket.org:pcafxc/gestioncarte.git
+ARG GESTIONCARTE_BRANCH=feature/card-manager-511
 
-# Cloner Painter pour avoir les bonnes dépendances
-WORKDIR /build
-RUN git clone https://github.com/ialame/painter.git painter
-WORKDIR /build/painter
-RUN git checkout main
+# Installer les dépendances système
+RUN apt-get update && apt-get install -y \
+    openssh-client \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# CORRIGER le nom du package dans painter-client
-# Renommer tous les fichiers painer -> painter
-RUN find painter-client/src -name "*.java" -exec sed -i 's/com\.pcagrade\.painer/com.pcagrade.painter/g' {} \;
-RUN find painter-client/src -type d -name "*painer*" | while read dir; do
-    newdir=$(echo "$dir" | sed 's/painer/painter/g')
-    mv "$dir" "$newdir" 2>/dev/null || true
-done
+# Installer Node.js pour le frontend (si nécessaire)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
 
-# Rebuild Painter avec la correction
-RUN mvn clean install -DskipTests
+# Configurer SSH
+RUN mkdir -p ~/.ssh && \
+    ssh-keyscan -H bitbucket.org >> ~/.ssh/known_hosts && \
+    chmod 700 ~/.ssh && \
+    chmod 644 ~/.ssh/known_hosts
 
-# Cloner et builder GestionCarte
-WORKDIR /build
-RUN git clone https://github.com/ialame/gestioncarte.git gestioncarte
-WORKDIR /build/gestioncarte
-RUN git checkout main
+# Configuration Git
+RUN git config --global user.email "docker@cardmanager.local" && \
+    git config --global user.name "Docker Builder"
 
-# Builder avec les bonnes dépendances
-RUN mvn clean install -DskipTests -U
+# Répertoire de travail
+WORKDIR /usr/src/app
 
-# Image finale
+# Cloner Mason d'abord (dépendance fondamentale)
+RUN --mount=type=ssh,id=default \
+    git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
+
+# Construire Mason
+WORKDIR /usr/src/app/mason
+RUN mvn clean install -DskipTests -B
+
+# Cloner Painter (dépendance pour GestionCarte)
+WORKDIR /usr/src/app
+RUN --mount=type=ssh,id=default \
+    git clone --depth 1 --branch ${PAINTER_BRANCH} ${PAINTER_REPO_URL} painter
+
+# Construire Painter (pour avoir les dépendances)
+WORKDIR /usr/src/app/painter
+
+# Corriger les problèmes de nommage
+RUN find . -name "*.java" -type f -exec sed -i 's/com\.pcagrade\.painer/com.pcagrade.painter/g' {} \; || true
+
+RUN mvn clean install -DskipTests -B
+
+# Cloner GestionCarte
+WORKDIR /usr/src/app
+RUN --mount=type=ssh,id=default \
+    git clone --depth 1 --branch ${GESTIONCARTE_BRANCH} ${GESTIONCARTE_REPO_URL} gestioncarte
+
+# Construire GestionCarte
+WORKDIR /usr/src/app/gestioncarte
+
+# Si il y a un frontend, l'installer d'abord
+RUN if [ -f "src/main/frontend/package.json" ]; then \
+        cd src/main/frontend && \
+        npm install && \
+        npm run build; \
+    fi
+
+# Construire l'application principale
+RUN mvn clean package -DskipTests -B -U
+
+# Image finale pour l'exécution
 FROM eclipse-temurin:21-jre-alpine
+
+LABEL maintainer="cardmanager@example.com"
+LABEL description="GestionCarte - Main CardManager Application"
+
+# Installer wget pour le health check
+RUN apk add --no-cache wget
+
+# Répertoire de travail
 WORKDIR /app
 
-# Copier le JAR
-COPY --from=builder /build/gestioncarte/target/*.jar app.jar
+# Copier le JAR de l'application
+COPY --from=builder /usr/src/app/gestioncarte/target/*.jar app.jar
 
-# Configuration JVM
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -Djava.security.egd=file:/dev/./urandom"
+# Créer un utilisateur non-root
+RUN addgroup -g 1000 cardmanager && \
+    adduser -D -s /bin/sh -u 1000 -G cardmanager cardmanager && \
+    chown -R cardmanager:cardmanager /app
 
-# Port
+# Configuration JVM optimisée
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -Djava.security.egd=file:/dev/./urandom -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+# Variables d'environnement
+ENV SPRING_PROFILES_ACTIVE="docker"
+
+# Port d'exposition
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
+# Utilisateur non-root pour la sécurité
+USER cardmanager:cardmanager
 
-# Démarrage
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+
+# Point d'entrée
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
