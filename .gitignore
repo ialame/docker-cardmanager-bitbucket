@@ -1,0 +1,85 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+2025-06-19_00-00-01.sql
+backup.sql
+docker/mariadb-test/data/
+init-db/
+*.sql
+structure.txt
+volumes/
+.env.local
+toto.txt
+# CardManager - .gitignore
+
+# Volumes Docker locaux (si créés dans le projet)
+volumes/
+data/
+storage/
+
+# Sauvegardes automatiques
+.cleanup-backup-*/
+.backup-*/
+
+# Logs
+*.log
+logs/
+
+# Fichiers temporaires
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+
+# Configuration locale
+docker-compose.override.yml
+.env.local
+.env.*.local
+
+# IDE et éditeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Données sensibles (si vous en ajoutez)
+secrets/
+certificates/
+*.key
+*.pem
+
+# Build artifacts (si vous buildez localement)
+target/
+build/
+dist/

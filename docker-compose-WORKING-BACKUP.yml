@@ -1,0 +1,96 @@
+services:
+  # Base de données MariaDB standalone
+  mariadb-standalone:
+    image: mariadb:11.2
+    container_name: cardmanager-mariadb-dev
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: dev
+      MYSQL_USER: ia
+      MYSQL_PASSWORD: foufafou
+    ports:
+      - "3307:3306"  # Port 3307 pour éviter les conflits
+    volumes:
+      - cardmanager_db_data:/var/lib/mysql
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - cardmanager-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Service Mason (utilise l'image déjà construite)
+  mason:
+    image: docker-cardmanager-mason:latest
+    container_name: cardmanager-mason
+    depends_on:
+      mariadb-standalone:
+        condition: service_healthy
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_USERNAME=ia
+      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - cardmanager-network
+
+  # Service Painter (utilise l'image déjà construite)
+  painter:
+    image: docker-cardmanager-painter:latest
+    container_name: cardmanager-painter
+    ports:
+      - "8081:8081"
+    depends_on:
+      mariadb-standalone:
+        condition: service_healthy
+      mason:
+        condition: service_started
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_USERNAME=ia
+      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_PROFILES_ACTIVE=docker
+      - PAINTER_IMAGE_STORAGE_PATH=/app/images
+    volumes:
+      - cardmanager_images:/app/images
+    networks:
+      - cardmanager-network
+
+  # Service GestionCarte (utilise l'image déjà construite)
+  gestioncarte:
+    image: docker-cardmanager-gestioncarte:latest
+    container_name: cardmanager-gestioncarte
+    ports:
+      - "8080:8080"
+    depends_on:
+      mariadb-standalone:
+        condition: service_healthy
+      painter:
+        condition: service_started
+      mason:
+        condition: service_started
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_USERNAME=ia
+      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_PROFILES_ACTIVE=docker
+      - PAINTER_SERVICE_URL=http://painter:8081
+      - SPRING_LIQUIBASE_ENABLED=false
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    networks:
+      - cardmanager-network
+
+volumes:
+  cardmanager_db_data:
+    name: cardmanager_db_data
+  cardmanager_images:
+    name: cardmanager_images
+
+networks:
+  cardmanager-network:
+    name: cardmanager-network
+    driver: bridge

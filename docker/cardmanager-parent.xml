@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.pcagrade</groupId>
+    <artifactId>cardmanager</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Card Manager Parent</name>
+    <description>Parent POM for Card Manager projects</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Versions des modules -->
+        <mason.version>2.4.1</mason.version>
+        <painter.version>1.3.0</painter.version>
+        <retriever.version>9.4.0</retriever.version>
+
+        <!-- Versions des dépendances tierces -->
+        <mapstruct.version>1.6.0.Beta1</mapstruct.version>
+        <swagger.version>2.2.21</swagger.version>
+        <liquibase.version>4.27.0</liquibase.version>
+        <jacoco.version>0.8.12</jacoco.version>
+        <resilience4j.version>2.1.0</resilience4j.version>
+        <dependency-check.version>8.4.3</dependency-check.version>
+        <springdoc.version>2.2.0</springdoc.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>3.2.5</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>2023.0.1</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- SpringDoc OpenAPI BOM -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi</artifactId>
+                <version>2.5.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Mason Dependencies - TOUTES LES VERSIONS -->
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-commons</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-ulid</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-localization</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-jpa</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-jpa-cache</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-json</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-oauth2</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-transaction-author</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-kubernetes</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-web-client</artifactId>
+                <version>${mason.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.mason</groupId>
+                <artifactId>mason-test</artifactId>
+                <version>${mason.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- Painter Dependencies -->
+            <dependency>
+                <groupId>com.pcagrade.painter</groupId>
+                <artifactId>painter</artifactId>
+                <version>${painter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.painter</groupId>
+                <artifactId>painter-common</artifactId>
+                <version>${painter.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.pcagrade.painter</groupId>
+                <artifactId>painter-client</artifactId>
+                <version>${painter.version}</version>
+            </dependency>
+
+            <!-- Dépendances tierces -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-annotations</artifactId>
+                <version>${swagger.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.liquibase</groupId>
+                <artifactId>liquibase-core</artifactId>
+                <version>${liquibase.version}</version>
+            </dependency>
+
+            <!-- Resilience4j -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-spring-boot2</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-reactor</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-ratelimiter</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-timelimiter</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo1.maven.org/maven2</url>
+        </repository>
+    </repositories>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

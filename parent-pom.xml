@@ -1,0 +1,78 @@
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
+        WORKDIR /usr/src/app
+
+        ARG MASON_REPO_URL
+        ARG PAINTER_REPO_URL
+        ARG MASON_BRANCH=main
+        ARG PAINTER_BRANCH=main
+        ARG GIT_TOKEN
+
+        # ÉTAPE CRITIQUE : Créer le POM parent cardmanager que Mason et Painter attendent
+        RUN echo '<?xml version="1.0" encoding="UTF-8"?>' > pom.xml && \
+        echo '<project xmlns="http://maven.apache.org/POM/4.0.0"' >> pom.xml && \
+        echo '         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' >> pom.xml && \
+        echo '         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">' >> pom.xml && \
+        echo '    <modelVersion>4.0.0</modelVersion>' >> pom.xml && \
+        echo '    <parent>' >> pom.xml && \
+echo '        <groupId>org.springframework.boot</groupId>' >> pom.xml && \
+echo '        <artifactId>spring-boot-starter-parent</artifactId>' >> pom.xml && \
+echo '        <version>3.2.5</version>' >> pom.xml && \
+echo '        <relativePath/>' >> pom.xml && \
+echo '    </parent>' >> pom.xml && \
+        echo '    <groupId>com.pcagrade</groupId>' >> pom.xml && \
+        echo '    <artifactId>cardmanager</artifactId>' >> pom.xml && \
+        echo '    <version>1.0.0-SNAPSHOT</version>' >> pom.xml && \
+        echo '    <packaging>pom</packaging>' >> pom.xml && \
+        echo '    <name>Card Manager Parent</name>' >> pom.xml && \
+        echo '    <description>Parent POM for Card Manager projects</description>' >> pom.xml && \
+        echo '    <properties>' >> pom.xml && \
+echo '        <java.version>21</java.version>' >> pom.xml && \
+echo '        <maven.compiler.source>21</maven.compiler.source>' >> pom.xml && \
+echo '        <maven.compiler.target>21</maven.compiler.target>' >> pom.xml && \
+echo '        <mason.version>2.4.1</mason.version>' >> pom.xml && \
+echo '        <painter.version>1.3.0</painter.version>' >> pom.xml && \
+echo '        <mapstruct.version>1.5.5.Final</mapstruct.version>' >> pom.xml && \
+echo '        <swagger.version>2.2.21</swagger.version>' >> pom.xml && \
+echo '        <resilience4j.version>2.1.0</resilience4j.version>' >> pom.xml && \
+echo '    </properties>' >> pom.xml && \
+        echo '</project>' >> pom.xml
+
+        # Installer le POM parent dans le repository Maven local
+        RUN mvn install -N
+
+        # Script de clonage Git
+        RUN echo '#!/bin/bash' > /usr/local/bin/git-clone.sh && \
+        echo 'REPO_URL=$1' >> /usr/local/bin/git-clone.sh && \
+        echo 'TARGET_DIR=$2' >> /usr/local/bin/git-clone.sh && \
+        echo 'BRANCH=$3' >> /usr/local/bin/git-clone.sh && \
+        echo 'TOKEN=$4' >> /usr/local/bin/git-clone.sh && \
+        echo 'if [ -n "$TOKEN" ]; then' >> /usr/local/bin/git-clone.sh && \
+        echo '  AUTH_URL=$(echo $REPO_URL | sed "s|https://|https://$TOKEN@|")' >> /usr/local/bin/git-clone.sh && \
+        echo 'else' >> /usr/local/bin/git-clone.sh && \
+        echo '  AUTH_URL=$REPO_URL' >> /usr/local/bin/git-clone.sh && \
+        echo 'fi' >> /usr/local/bin/git-clone.sh && \
+        echo 'git clone --depth 1 --branch $BRANCH $AUTH_URL $TARGET_DIR' >> /usr/local/bin/git-clone.sh && \
+        chmod +x /usr/local/bin/git-clone.sh
+
+        # Cloner les dépôts
+        RUN /usr/local/bin/git-clone.sh "$MASON_REPO_URL" mason "$MASON_BRANCH" "$GIT_TOKEN"
+        RUN /usr/local/bin/git-clone.sh "$PAINTER_REPO_URL" painter "$PAINTER_BRANCH" "$GIT_TOKEN"
+
+        # Build Mason (maintenant le parent cardmanager existe)
+        WORKDIR /usr/src/app/mason
+        RUN mvn clean install -DskipTests
+
+        # Build Painter (maintenant Mason et le parent existent)
+        WORKDIR /usr/src/app/painter
+        RUN mvn clean package -DskipTests
+
+        # Image finale
+        FROM eclipse-temurin:21-jre-alpine
+        WORKDIR /app
+        RUN apk add --no-cache curl
+        COPY --from=builder /usr/src/app/painter/painter/target/painter-*.jar app.jar
+        RUN mkdir -p /app/images
+        ENV JAVA_OPTS="-Xmx1024m -Xms512m"
+        ENV PAINTER_IMAGE_STORAGE_PATH="/app/images"
+        EXPOSE 8081
+        ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
