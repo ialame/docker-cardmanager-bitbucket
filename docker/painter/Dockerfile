@@ -1,111 +1,91 @@
-FROM maven:3.9.6-eclipse-temurin-21 AS builder
+# Stage 1: Builder
+FROM maven:3.9.6-eclipse-temurin-21 as builder
 
-# Arguments de build
-ARG MASON_REPO_URL=git@bitbucket.org:pcafxc/mason.git
-ARG MASON_BRANCH=feature/RETRIEVER-511
-ARG PAINTER_REPO_URL=git@bitbucket.org:pcafxc/painter.git
-ARG PAINTER_BRANCH=feature/card-manager-511
-
-# Installer git et openssh-client pour SSH
+# Installation des outils nécessaires
 RUN apt-get update && apt-get install -y openssh-client git && rm -rf /var/lib/apt/lists/*
 
 # Configuration Git
 RUN git config --global user.email "docker@cardmanager.local" && \
     git config --global user.name "Docker Builder"
 
-# Copier les clés SSH depuis le contexte de build
+# Configuration SSH pour Bitbucket
 COPY ./docker/ssh-keys/ /root/.ssh/
-
-# Configurer les permissions SSH
 RUN chmod 700 /root/.ssh && \
     chmod 600 /root/.ssh/bitbucket_ed25519 && \
     chmod 644 /root/.ssh/bitbucket_ed25519.pub && \
     chmod 644 /root/.ssh/config && \
-    ssh-keyscan -H bitbucket.org >> /root/.ssh/known_hosts && \
-    chmod 644 /root/.ssh/known_hosts
+    ssh-keyscan bitbucket.org >> /root/.ssh/known_hosts
 
 # Répertoire de travail
 WORKDIR /usr/src/app
 
-# Créer la structure Maven parent
+# Copier le POM parent
 COPY ./docker/cardmanager-parent.xml ./pom.xml
 
-# Cloner Mason d'abord (dépendance)
-RUN git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
+# Cloner les dépôts
+RUN git clone --depth 1 --branch feature/RETRIEVER-511 git@bitbucket.org:pcafxc/mason.git mason
+RUN git clone --depth 1 --branch feature/card-manager-511 git@bitbucket.org:pcafxc/painter.git painter
 
-# Cloner Painter
-RUN git clone --depth 1 --branch ${PAINTER_BRANCH} ${PAINTER_REPO_URL} painter
-
-# Copier le fichier de dépendance
+# Ajouter la dépendance Actuator
 COPY ./docker/painter/fix/actuator-dependency.xml /tmp/actuator-dependency.xml
-
-# SOLUTION CORRIGÉE : Ajouter la dépendance avec XML valide
 RUN cd painter/painter && \
-    # Trouver la ligne <dependencies> et insérer après
     awk '/<dependencies>/ {print; system("cat /tmp/actuator-dependency.xml"); next} 1' pom.xml > pom.xml.tmp && \
     mv pom.xml.tmp pom.xml
 
-# Vérifier que la dépendance a été ajoutée correctement
 RUN echo "=== Dépendance Actuator ajoutée au pom.xml ===" && \
     grep -A 4 -B 1 "spring-boot-starter-actuator" painter/painter/pom.xml
 
-# Vérifier que le XML est valide
 RUN echo "=== Vérification XML du pom.xml ===" && \
     xmllint --noout painter/painter/pom.xml && echo "XML valide" || echo "XML invalide"
 
-# Remplacer application.properties avec configuration Actuator
+# PATCH CRITIQUE : Ajouter le contrôleur AVANT la compilation
+COPY ./docker/painter/patches/SimpleUploadController.java /tmp/SimpleUploadController.java
+RUN mkdir -p painter/painter/src/main/java/com/pcagrade/painter/controller/ && \
+    cp /tmp/SimpleUploadController.java painter/painter/src/main/java/com/pcagrade/painter/controller/
+
+RUN echo "=== Contrôleur d'upload ajouté ===" && \
+    ls -la painter/painter/src/main/java/com/pcagrade/painter/controller/
+
+# Configuration application.properties
 COPY ./docker/painter/config/application.properties painter/painter/src/main/resources/application.properties
 
-# Vérifier le fichier application.properties
 RUN echo "=== Configuration Actuator dans application.properties ===" && \
     grep -A 5 "management" painter/painter/src/main/resources/application.properties
 
-# Construire le parent
+# Installation du parent
 RUN mvn install -N
 
-# Construire Mason (dépendance de Painter)
+# Build Mason
 WORKDIR /usr/src/app/mason
 RUN mvn clean install -DskipTests -B
 
-# Construire Painter avec dépendance Actuator
+# Build Painter AVEC le contrôleur
 WORKDIR /usr/src/app/painter
 RUN mvn clean package -DskipTests -B
 
-# Vérifier que Actuator est maintenant dans le JAR
 RUN echo "=== Vérification Actuator dans le JAR ===" && \
     jar tf painter/target/*.jar | grep -i actuator | head -5
 
-# Image finale pour l'exécution
+RUN echo "=== Vérification contrôleur dans le JAR ===" && \
+    jar tf painter/target/*.jar | grep -i SimpleUploadController
+
+# Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
 
-LABEL maintainer="cardmanager@example.com"
-LABEL description="Painter Service with Actuator"
-
-# Installer wget et xmllint pour les vérifications
+# Installation des outils de diagnostic
 RUN apk add --no-cache wget libxml2-utils
 
 # Répertoire de travail
 WORKDIR /app
 
-# Copier le JAR principal de Painter
+# Copier le JAR depuis le builder
 COPY --from=builder /usr/src/app/painter/painter/target/*.jar app.jar
 
-# Créer le dossier pour les images
+# Créer le dossier images
 RUN mkdir -p /app/images
 
-# Configuration JVM optimisée
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -Djava.security.egd=file:/dev/./urandom"
-
-# Variables d'environnement pour Painter
-ENV PAINTER_IMAGE_STORAGE_PATH="/app/images"
-ENV SPRING_PROFILES_ACTIVE="docker"
-
-# Port d'exposition
+# Exposer le port
 EXPOSE 8081
 
-# Health check avec Actuator
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-    CMD wget --quiet --tries=1 --spider http://localhost:8081/actuator/health || exit 1
-
-# Point d'entrée
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Démarrage avec profil docker
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dspring.profiles.active=docker -jar app.jar"]

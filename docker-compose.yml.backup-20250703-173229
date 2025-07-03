@@ -83,19 +83,6 @@ services:
       - mariadb-standalone
       - painter
     environment:
-      # CORRECTION CRITIQUE - URLs Painter
-      - PAINTER_SERVICE_URL=http://painter:8081
-      - PAINTER_BASE_URL=http://painter:8081
-      - PAINTER_API_BASE_URL=http://painter:8081
-      - SPRING_WEBFLUX_BASE_URL_PAINTER=http://painter:8081
-
-      # Configuration client Painter
-      - PAINTER_CLIENT_BASE_URL=http://painter:8081
-      - PAINTER_CLIENT_URL=http://painter:8081
-
-      # Debug WebClient
-      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_REACTIVE_FUNCTION_CLIENT=DEBUG
-      - LOGGING_LEVEL_COM_PCAGRADE_PAINTER_CLIENT=DEBUG
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou

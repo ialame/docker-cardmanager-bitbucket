@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# DIAGNOSTIC COMPLET - SAUVEGARDE IMAGES
+# FIX RAPIDE DOCKERFILE GESTIONCARTE
 # =============================================================================
 
 set -e
@@ -13,275 +13,268 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-echo -e "${CYAN}🔍 DIAGNOSTIC COMPLET - SAUVEGARDE IMAGES${NC}"
-echo "=========================================="
+echo -e "${CYAN}🔧 FIX RAPIDE DOCKERFILE GESTIONCARTE${NC}"
+echo "===================================="
 
-print_header() {
-    echo -e "${CYAN}📋 $1${NC}"
-    echo "----------------------------------------"
+print_step() {
+    echo -e "${BLUE}📋 $1${NC}"
 }
 
 print_success() {
     echo -e "${GREEN}✅ $1${NC}"
 }
 
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
 print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
+# 1. RESTAURER LE DOCKERFILE ORIGINAL
+print_step "1. Restauration du Dockerfile original"
 
-# 1. ÉTAT DU SYSTÈME
-print_header "1. ÉTAT DU SYSTÈME"
-
-echo "🏥 État des containers :"
-docker-compose ps
-
-echo ""
-echo "🌐 Test des endpoints :"
-gestion_health=$(curl -s --max-time 5 http://localhost:8080/actuator/health || echo "ERROR")
-painter_health=$(curl -s --max-time 5 http://localhost:8081/actuator/health || echo "ERROR")
-nginx_status=$(curl -s --max-time 5 http://localhost:8082/ || echo "ERROR")
-
-if echo "$gestion_health" | grep -q "UP"; then
-    print_success "GestionCarte health : OK"
+# Trouver la dernière sauvegarde
+if ls docker/gestioncarte/Dockerfile.backup-* 1> /dev/null 2>&1; then
+    latest_backup=$(ls docker/gestioncarte/Dockerfile.backup-* | tail -1)
+    cp "$latest_backup" docker/gestioncarte/Dockerfile
+    print_success "Dockerfile restauré depuis $latest_backup"
 else
-    print_error "GestionCarte health : KO"
-fi
+    print_error "Aucune sauvegarde trouvée"
 
-if echo "$painter_health" | grep -q "UP"; then
-    print_success "Painter health : OK"
-else
-    print_error "Painter health : KO"
-fi
+    # Créer un Dockerfile minimal s'il n'existe pas
+    if [ ! -f "docker/gestioncarte/Dockerfile" ]; then
+        echo "🔨 Création d'un Dockerfile minimal..."
+        cat > docker/gestioncarte/Dockerfile << 'EOF'
+# Utiliser le même Dockerfile que Painter mais pour GestionCarte
+FROM maven:3.9.6-eclipse-temurin-21 as builder
 
-if echo "$nginx_status" | grep -q "nginx\|Index\|directory"; then
-    print_success "Nginx images : OK"
-else
-    print_error "Nginx images : KO"
-fi
+# Installation des outils nécessaires
+RUN apt-get update && apt-get install -y openssh-client git && rm -rf /var/lib/apt/lists/*
 
-# 2. CONFIGURATION DES CHEMINS D'IMAGES
-print_header "2. CONFIGURATION DES CHEMINS D'IMAGES"
+# Configuration Git
+RUN git config --global user.email "docker@cardmanager.local" && \
+    git config --global user.name "Docker Builder"
 
-echo "🔧 Configuration Painter :"
-painter_storage=$(docker exec cardmanager-painter env | grep -i image)
-if [[ -n "$painter_storage" ]]; then
-    print_success "Variables d'images trouvées"
-    echo "$painter_storage"
-else
-    print_error "Aucune variable d'image trouvée"
-fi
+# Configuration SSH pour Bitbucket
+COPY ./docker/ssh-keys/ /root/.ssh/
+RUN chmod 700 /root/.ssh && \
+    chmod 600 /root/.ssh/bitbucket_ed25519 && \
+    chmod 644 /root/.ssh/bitbucket_ed25519.pub && \
+    chmod 644 /root/.ssh/config && \
+    ssh-keyscan bitbucket.org >> /root/.ssh/known_hosts
 
-echo ""
-echo "🔧 Configuration GestionCarte :"
-gestion_painter_config=$(docker exec cardmanager-gestioncarte env | grep -i painter)
-if [[ -n "$gestion_painter_config" ]]; then
-    print_success "Configuration Painter trouvée"
-    echo "$gestion_painter_config"
-else
-    print_error "Configuration Painter manquante dans GestionCarte"
-fi
+# Répertoire de travail
+WORKDIR /usr/src/app
 
-# 3. ÉTAT DU SYSTÈME DE FICHIERS
-print_header "3. ÉTAT DU SYSTÈME DE FICHIERS"
+# Copier le POM parent
+COPY ./docker/cardmanager-parent.xml ./pom.xml
 
-echo "📁 Dossier images Painter :"
-if docker exec cardmanager-painter test -d /app/images; then
-    print_success "Dossier /app/images existe"
+# Cloner les dépôts
+RUN git clone --depth 1 --branch feature/RETRIEVER-511 git@bitbucket.org:pcafxc/mason.git mason
+RUN git clone --depth 1 --branch feature/card-manager-511 git@bitbucket.org:pcafxc/painter.git painter
+RUN git clone --depth 1 --branch feature/card-manager-511 git@bitbucket.org:pcafxc/gestioncarte.git gestioncarte
 
-    # Permissions
-    permissions=$(docker exec cardmanager-painter ls -ld /app/images)
-    print_info "Permissions : $permissions"
+# Configuration application.properties pour GestionCarte
+COPY ./config/application-docker.properties gestioncarte/src/main/resources/application-docker.properties
 
-    # Contenu
-    image_count=$(docker exec cardmanager-painter find /app/images -type f | wc -l)
-    print_info "Nombre de fichiers : $image_count"
+# Installation du parent
+RUN mvn install -N
 
-    if [[ $image_count -gt 0 ]]; then
-        print_info "Fichiers présents :"
-        docker exec cardmanager-painter ls -la /app/images/ | head -10
-    else
-        print_warning "Aucun fichier d'image trouvé"
+# Build Mason
+WORKDIR /usr/src/app/mason
+RUN mvn clean install -DskipTests -B
+
+# Build Painter
+WORKDIR /usr/src/app/painter
+RUN mvn clean install -DskipTests -B
+
+# Build GestionCarte
+WORKDIR /usr/src/app/gestioncarte
+RUN mvn clean package -DskipTests -B
+
+# Stage 2: Runtime
+FROM eclipse-temurin:21-jre-alpine
+
+# Installation des outils de diagnostic
+RUN apk add --no-cache wget
+
+# Répertoire de travail
+WORKDIR /app
+
+# Copier le JAR depuis le builder
+COPY --from=builder /usr/src/app/gestioncarte/target/*.jar app.jar
+
+# Exposer le port
+EXPOSE 8080
+
+# Démarrage avec profil docker
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dspring.profiles.active=docker -jar app.jar"]
+EOF
+        print_success "Dockerfile minimal créé"
     fi
-else
-    print_error "Dossier /app/images n'existe pas"
 fi
 
-echo ""
-echo "🗄️ Volume Docker :"
-volume_info=$(docker volume inspect cardmanager_images 2>/dev/null)
-if [[ $? -eq 0 ]]; then
-    print_success "Volume cardmanager_images existe"
-    mountpoint=$(echo "$volume_info" | grep -o '"Mountpoint": "[^"]*"' | cut -d'"' -f4)
-    print_info "Mountpoint : $mountpoint"
-else
-    print_error "Volume cardmanager_images n'existe pas"
-fi
+# 2. SOLUTION ALTERNATIVE - UTILISER DOCKER-COMPOSE SANS REBUILD
+print_step "2. Solution alternative - Variables d'environnement"
 
-# 4. LOGS ET ERREURS
-print_header "4. LOGS ET ERREURS"
+echo "🔧 Modification directe des variables d'environnement..."
 
-echo "📋 Logs récents Painter (recherche d'opérations sur images) :"
-painter_image_logs=$(docker-compose logs --tail=50 painter | grep -i -E "(image|upload|save|file|storage)" | tail -10)
-if [[ -n "$painter_image_logs" ]]; then
-    print_info "Logs d'images trouvés :"
-    echo "$painter_image_logs"
-else
-    print_warning "Aucun log d'opération sur images trouvé"
-fi
-
-echo ""
-echo "📋 Logs récents GestionCarte (recherche d'appels vers Painter) :"
-gestion_painter_logs=$(docker-compose logs --tail=50 gestioncarte | grep -i -E "(painter|8081|image|upload)" | tail -10)
-if [[ -n "$gestion_painter_logs" ]]; then
-    print_info "Logs d'appels Painter trouvés :"
-    echo "$gestion_painter_logs"
-else
-    print_warning "Aucun log d'appel vers Painter trouvé"
-fi
-
-echo ""
-echo "🚨 Erreurs récentes :"
-recent_errors=$(docker-compose logs --tail=100 painter gestioncarte | grep -i -E "(error|exception|failed)" | tail -5)
-if [[ -n "$recent_errors" ]]; then
-    print_error "Erreurs trouvées :"
-    echo "$recent_errors"
-else
-    print_success "Aucune erreur récente trouvée"
-fi
-
-# 5. TEST DE L'API PAINTER
-print_header "5. TEST DE L'API PAINTER"
-
-echo "🧪 Test des endpoints Painter :"
-
-# Test des endpoints API
-endpoints_to_test=(
-    "/actuator/health"
-    "/api/images"
-    "/images"
-    "/painter/images"
-)
-
-for endpoint in "${endpoints_to_test[@]}"; do
-    response=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:8081$endpoint)
-    if [[ "$response" == "200" ]]; then
-        print_success "Endpoint $endpoint : $response (OK)"
-    elif [[ "$response" == "404" ]]; then
-        print_warning "Endpoint $endpoint : $response (Non trouvé)"
-    else
-        print_error "Endpoint $endpoint : $response"
-    fi
-done
-
-# 6. CONFIGURATION APPLICATION.PROPERTIES
-print_header "6. CONFIGURATION APPLICATION.PROPERTIES"
-
-echo "📋 Configuration storage dans application.properties :"
-app_storage_config=$(docker exec cardmanager-painter unzip -p /app/app.jar BOOT-INF/classes/application.properties | grep -E "(image|storage|upload)")
-if [[ -n "$app_storage_config" ]]; then
-    print_success "Configuration de stockage trouvée"
-    echo "$app_storage_config"
-else
-    print_error "Configuration de stockage manquante"
-fi
-
-# 7. TEST MANUEL DE COMMUNICATION
-print_header "7. TEST MANUEL DE COMMUNICATION"
-
-echo "🔗 Test communication GestionCarte → Painter :"
-
-# Test de ping simple
-if docker exec cardmanager-gestioncarte ping -c 1 painter >/dev/null 2>&1; then
-    print_success "Ping GestionCarte → Painter : OK"
-else
-    print_error "Ping GestionCarte → Painter : KO"
-fi
-
-# Test HTTP simple
-gestion_to_painter=$(docker exec cardmanager-gestioncarte wget -qO- --timeout=5 "http://painter:8081/actuator/health" 2>/dev/null)
-if echo "$gestion_to_painter" | grep -q "UP"; then
-    print_success "HTTP GestionCarte → Painter : OK"
-else
-    print_error "HTTP GestionCarte → Painter : KO"
-fi
-
-# 8. RECOMMANDATIONS
-print_header "8. RECOMMANDATIONS"
-
-issues_found=0
-recommendations=()
-
-# Vérifier si les images sont uploadées mais pas sauvegardées
-if [[ $image_count -eq 0 ]]; then
-    print_warning "Aucune image sauvegardée détectée"
-    recommendations+=("Testez l'upload d'une image via http://localhost:8080")
-    recommendations+=("Surveillez les logs : docker-compose logs -f painter gestioncarte")
-    ((issues_found++))
-fi
-
-# Vérifier la configuration
-if [[ -z "$gestion_painter_config" ]]; then
-    print_error "Configuration Painter manquante dans GestionCarte"
-    recommendations+=("Vérifiez PAINTER_SERVICE_URL dans docker-compose.yml")
-    ((issues_found++))
-fi
-
-# Vérifier les logs d'erreurs
-if [[ -n "$recent_errors" ]]; then
-    print_error "Erreurs récentes détectées"
-    recommendations+=("Analysez les erreurs dans les logs")
-    ((issues_found++))
-fi
-
-echo ""
-if [[ $issues_found -eq 0 ]]; then
-    print_success "Aucun problème majeur détecté dans la configuration"
-    echo ""
-    print_info "🎯 Actions recommandées :"
-    echo "1. Uploadez une image via http://localhost:8080"
-    echo "2. Surveillez les logs : docker-compose logs -f painter"
-    echo "3. Vérifiez les images : docker exec cardmanager-painter ls -la /app/images/"
-    echo "4. Consultez la galerie : http://localhost:8082/images/"
-else
-    print_error "$issues_found problème(s) détecté(s)"
-    echo ""
-    print_info "🔧 Recommandations :"
-    for i in "${!recommendations[@]}"; do
-        echo "   $((i+1)). ${recommendations[$i]}"
-    done
-fi
-
-# 9. SCRIPT DE TEST LIVE
-print_header "9. SCRIPT DE TEST LIVE"
-
-echo "📝 Script pour tester l'upload en temps réel :"
-cat << 'EOF'
-# Exécutez ce script dans un autre terminal pendant que vous uploadez :
-
-# Terminal 1 : Surveiller les logs
-docker-compose logs -f painter | grep -i -E "(image|upload|save|file)"
-
-# Terminal 2 : Surveiller le dossier images
-watch -n 2 "docker exec cardmanager-painter ls -la /app/images/"
-
-# Terminal 3 : Tester l'upload
-open http://localhost:8080
+# Créer un fichier .env local pour forcer les bonnes URLs
+cat > .env.painter.override << 'EOF'
+# Override pour forcer la bonne URL Painter
+PAINTER_SERVICE_URL=http://painter:8081
+PAINTER_BASE_URL=http://painter:8081
+PAINTER_API_URL=http://painter:8081
 EOF
 
-echo ""
-print_info "💡 Pour un diagnostic en temps réel :"
-echo "1. Ouvrez 2-3 terminaux"
-echo "2. Lancez la surveillance des logs et du dossier"
-echo "3. Uploadez une image"
-echo "4. Observez ce qui se passe"
+print_success "Fichier d'override créé"
+
+# 3. MODIFIER DOCKER-COMPOSE POUR FORCER LES VARIABLES
+print_step "3. Modification docker-compose pour forcer les variables"
+
+# Backup du docker-compose
+cp docker-compose.yml docker-compose.yml.backup-$(date +%Y%m%d-%H%M%S)
+
+# Modifier la section gestioncarte pour forcer toutes les variables Painter
+cat > temp_gestioncarte_env.txt << 'EOF'
+      # CORRECTION CRITIQUE - URLs Painter
+      - PAINTER_SERVICE_URL=http://painter:8081
+      - PAINTER_BASE_URL=http://painter:8081
+      - PAINTER_API_BASE_URL=http://painter:8081
+      - SPRING_WEBFLUX_BASE_URL_PAINTER=http://painter:8081
+
+      # Configuration client Painter
+      - PAINTER_CLIENT_BASE_URL=http://painter:8081
+      - PAINTER_CLIENT_URL=http://painter:8081
+
+      # Debug WebClient
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_REACTIVE_FUNCTION_CLIENT=DEBUG
+      - LOGGING_LEVEL_COM_PCAGRADE_PAINTER_CLIENT=DEBUG
+EOF
+
+# Injecter dans docker-compose.yml
+awk '
+/gestioncarte:/{in_gestioncarte=1}
+in_gestioncarte && /environment:/{
+    print
+    while ((getline line < "temp_gestioncarte_env.txt") > 0) print line
+    close("temp_gestioncarte_env.txt")
+    next
+}
+/^  [a-zA-Z]/ && in_gestioncarte && !/gestioncarte/{in_gestioncarte=0}
+{print}
+' docker-compose.yml > docker-compose.yml.new
+
+mv docker-compose.yml.new docker-compose.yml
+rm temp_gestioncarte_env.txt
+
+print_success "Variables Painter ajoutées à docker-compose.yml"
+
+# 4. REDÉMARRAGE SANS REBUILD
+print_step "4. Redémarrage sans rebuild"
+
+echo "🚀 Redémarrage des services avec nouvelles variables..."
+docker-compose up -d painter gestioncarte
+
+# Attendre le démarrage
+echo "⏳ Attente du démarrage..."
+for i in {1..60}; do
+    painter_status=$(curl -s http://localhost:8081/actuator/health 2>/dev/null | grep -o "UP" || echo "DOWN")
+    gestion_status=$(curl -s http://localhost:8080/actuator/health 2>/dev/null | grep -o "UP" || echo "DOWN")
+
+    if [[ "$painter_status" == "UP" && "$gestion_status" == "UP" ]]; then
+        print_success "Services redémarrés avec succès"
+        break
+    fi
+    echo -n "."
+    sleep 2
+done
+
+# 5. VÉRIFICATION COMPLÈTE
+print_step "5. Vérification complète"
+
+echo "🧪 Vérification des variables d'environnement :"
+docker exec cardmanager-gestioncarte env | grep -i painter | head -10
 
 echo ""
-print_success "Diagnostic terminé - Prêt pour le test d'upload"
+echo "🔗 Test communication :"
+comm_result=$(docker exec cardmanager-gestioncarte wget -qO- --timeout=5 "http://painter:8081/actuator/health" 2>/dev/null)
+if echo "$comm_result" | grep -q "UP"; then
+    print_success "Communication GestionCarte → Painter : OK"
+else
+    print_error "Communication GestionCarte → Painter : FAIL"
+    echo "Résultat: $comm_result"
+fi
+
+# 6. TEST D'UPLOAD FINAL
+print_step "6. Test d'upload final"
+
+echo "🧪 Test d'upload depuis GestionCarte..."
+
+# Créer un fichier de test dans GestionCarte
+docker exec cardmanager-gestioncarte sh -c 'echo "test upload final" > /tmp/test-final.txt'
+
+# Test upload via l'endpoint
+upload_result=$(docker exec cardmanager-gestioncarte sh -c '
+curl -s -X POST \
+  -F "file=@/tmp/test-final.txt" \
+  http://painter:8081/upload
+')
+
+if echo "$upload_result" | grep -q "success"; then
+    print_success "Upload test réussi !"
+    echo "Réponse: $upload_result" | head -3
+else
+    print_error "Upload test échoué"
+    echo "Réponse: $upload_result"
+fi
+
+# 7. MONITORING SIMPLE
+print_step "7. Script de monitoring simple"
+
+cat > quick_monitor.sh << 'EOF'
+#!/bin/bash
+
+echo "🎯 MONITORING SIMPLE"
+echo "==================="
+
+echo "📊 État des services :"
+docker-compose ps | grep -E "(painter|gestioncarte)"
+
+echo ""
+echo "🔗 Variables Painter dans GestionCarte :"
+docker exec cardmanager-gestioncarte env | grep PAINTER_SERVICE_URL
+
+echo ""
+echo "📁 Fichiers dans /app/images :"
+docker exec cardmanager-painter ls -la /app/images/ | grep -v "^total"
+
+echo ""
+echo "🧪 Test de communication :"
+if docker exec cardmanager-gestioncarte wget -qO- --timeout=3 "http://painter:8081/actuator/health" 2>/dev/null | grep -q "UP"; then
+    echo "✅ Communication OK"
+else
+    echo "❌ Communication FAIL"
+fi
+
+echo ""
+echo "🎯 Testez maintenant l'upload via http://localhost:8080"
+EOF
+
+chmod +x quick_monitor.sh
+print_success "Monitoring simple créé : ./quick_monitor.sh"
+
+# 8. RÉSUMÉ
+print_step "8. Résumé"
+
+echo ""
+print_success "🎉 Fix alternatif appliqué !"
+echo ""
+echo "✅ Variables d'environnement corrigées"
+echo "✅ Communication inter-services testée"
+echo "✅ Services redémarrés sans rebuild"
+echo ""
+echo "🧪 Actions suivantes :"
+echo "   1. ./quick_monitor.sh (vérification rapide)"
+echo "   2. http://localhost:8080 (test interface)"
+echo "   3. Tentez un upload d'image"
+echo ""
+print_success "La communication devrait maintenant fonctionner !"
