@@ -9,27 +9,46 @@ ARG MASON_BRANCH=feature/RETRIEVER-511
 # Installer git et openssh-client pour SSH
 RUN apt-get update && apt-get install -y openssh-client git && rm -rf /var/lib/apt/lists/*
 
-# Configurer SSH
-RUN mkdir -p ~/.ssh && \
-    ssh-keyscan -H bitbucket.org >> ~/.ssh/known_hosts && \
-    chmod 700 ~/.ssh && \
-    chmod 644 ~/.ssh/known_hosts
-
-# Configuration Git pour éviter les warnings
+# Configuration Git
 RUN git config --global user.email "docker@cardmanager.local" && \
     git config --global user.name "Docker Builder"
+
+# Copier les clés SSH depuis le contexte de build
+COPY ./docker/ssh-keys/ /root/.ssh/
+
+# Configurer les permissions SSH
+RUN chmod 700 /root/.ssh && \
+    chmod 600 /root/.ssh/bitbucket_ed25519 && \
+    chmod 644 /root/.ssh/bitbucket_ed25519.pub && \
+    chmod 644 /root/.ssh/config && \
+    ssh-keyscan -H bitbucket.org >> /root/.ssh/known_hosts && \
+    chmod 644 /root/.ssh/known_hosts
 
 # Répertoire de travail
 WORKDIR /usr/src/app
 
-# Cloner le dépôt Mason avec SSH mount
-RUN --mount=type=ssh,id=default \
-    git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
+# Créer la structure Maven parent comme attendue
+# 1. Créer le POM parent cardmanager
+COPY ./docker/cardmanager-parent.xml ./pom.xml
 
-# Se placer dans le dossier mason et construire
+# Debug: Vérifier le POM parent
+RUN echo "=== POM parent cardmanager ===" && \
+    head -20 pom.xml
+
+# 2. Cloner Mason dans le sous-répertoire
+RUN git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
+
+# Debug: Vérifier la structure
+RUN echo "=== Structure créée ===" && \
+    ls -la && \
+    echo "=== POM de Mason ===" && \
+    head -20 mason/pom.xml
+
+# 3. Construire d'abord le parent
+RUN mvn install -N
+
+# 4. Construire Mason
 WORKDIR /usr/src/app/mason
-
-# Construire Mason (sans tests pour accélérer)
 RUN mvn clean install -DskipTests -B
 
 # Image finale légère pour partager les artefacts

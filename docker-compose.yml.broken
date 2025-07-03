@@ -1,4 +1,5 @@
 services:
+  # Service Mason (bibliothèque partagée)
   mason:
     build:
       context: .
@@ -12,6 +13,7 @@ services:
     networks:
       - cardmanager-network
 
+  # Service Painter (traitement d'images)
   painter:
     build:
       context: .
@@ -29,20 +31,25 @@ services:
       - ~/.ssh:/root/.ssh:ro
     environment:
       - PAINTER_IMAGE_STORAGE_PATH=/app/images
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-docker}
-      - JAVA_OPTS=${JAVA_OPTS_PAINTER:--Xms512m -Xmx1024m}
       - SPRING_LIQUIBASE_ENABLED=false
-      - SERVER_SERVLET_CONTEXT_PATH=/
-      - MANAGEMENT_ENDPOINTS_WEB_BASE_PATH=/actuator      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
-      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_DATASOURCE_PASSWORD=foufafou      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-docker}
+      - JAVA_OPTS=${JAVA_OPTS_PAINTER:--Xms512m -Xmx1024m}
     networks:
       - cardmanager-network
     depends_on:
       - mason
       - mariadb-standalone
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
+  # Application principale GestionCarte
   gestioncarte:
     build:
       context: .
@@ -55,7 +62,7 @@ services:
         GESTIONCARTE_REPO_URL: ${GESTIONCARTE_REPO_URL:-git@bitbucket.org:pcafxc/gestioncarte.git}
         GESTIONCARTE_BRANCH: ${GESTIONCARTE_BRANCH:-feature/card-manager-511}
     ports:
-      - "8090:8080"
+      - "${GESTIONCARTE_PORT:-8090}:8080"
     volumes:
       - cardmanager_images:/app/images
       - maven_cache:/root/.m2
@@ -63,20 +70,28 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-docker}
       - JAVA_OPTS=${JAVA_OPTS_GESTIONCARTE:--Xms512m -Xmx1024m}
-      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
-      - SPRING_DATASOURCE_USERNAME=ia
-      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/${LOCAL_DB_NAME:-dev}
+      - SPRING_DATASOURCE_USERNAME=${LOCAL_DB_USER:-ia}
+      - SPRING_DATASOURCE_PASSWORD=${LOCAL_DB_PASS:-foufafou}
       - PAINTER_SERVICE_URL=http://painter:8081
       - SPRING_LIQUIBASE_ENABLED=false
-      - SERVER_SERVLET_CONTEXT_PATH=/
-      - MANAGEMENT_ENDPOINTS_WEB_BASE_PATH=/actuator    networks:
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_USERNAME=ia
+      - SPRING_DATASOURCE_PASSWORD=foufafou    networks:
       - cardmanager-network
     depends_on:
       - mason
       - painter
       - mariadb-standalone
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
+  # Base de données MariaDB
   mariadb-standalone:
     image: ${DATABASE_IMAGE:-mariadb:11.4}
     environment:
@@ -94,7 +109,14 @@ services:
     networks:
       - cardmanager-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
+  # Serveur d'images Nginx
   nginx-images:
     image: nginx:alpine
     ports:
@@ -107,6 +129,11 @@ services:
     depends_on:
       - painter
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   cardmanager_db_data:
