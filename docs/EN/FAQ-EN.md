@@ -115,7 +115,7 @@ Then: `docker-compose down --volumes && docker-compose up -d`
 ## 📱 Platform-specific
 
 ### Q: Differences between macOS and Linux?
-**A:** Docker installation differs, but everything else is identical. See [DEPLOYMENT-EN.md](DEPLOYMENT-EN.md).
+**A:** Docker installation differs, but everything else is identical. See [DEPLOYMENT-EN.md](../DEPLOYMENT-EN.md).
 
 ### Q: Does CardManager work on Raspberry Pi?
 **A:** Possible with ARM images, but not officially supported.
@@ -128,7 +128,7 @@ Then: `docker-compose down --volumes && docker-compose up -d`
 ### Q: Where to ask for help?
 **A:**
 1. Check this FAQ
-2. Re-read the [deployment guide](DEPLOYMENT-EN.md)
+2. Re-read the [deployment guide](../DEPLOYMENT-EN.md)
 3. Create a GitHub issue with your logs
 
 ### Q: How to attach logs to a bug report?

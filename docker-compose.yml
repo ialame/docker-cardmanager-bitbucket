@@ -32,9 +32,9 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - PAINTER_IMAGE_STORAGE_PATH=/app/images
+      # PAS de propriétés Hikari problématiques
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=INFO
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
-      - SERVER_PORT=8081
-      - SERVER_ADDRESS=0.0.0.0
     ports:
       - "8081:8081"
     volumes:
@@ -56,34 +56,11 @@ services:
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
       - SPRING_PROFILES_ACTIVE=docker
-
-      # FORCER TOUTES LES VARIANTES POSSIBLES D'URL PAINTER
       - PAINTER_SERVICE_URL=http://painter:8081
-      - PAINTER_API_BASE_URL=http://painter:8081
-      - PAINTER_BASE_URL=http://painter:8081
-      - PAINTER_URL=http://painter:8081
-      - PAINTER_HOST=painter
-      - PAINTER_PORT=8081
-      - PAINTER_ENDPOINT=http://painter:8081
-      - PAINTER_API_URL=http://painter:8081
-      - PAINTER_SERVICE_HOST=painter
-      - PAINTER_SERVICE_PORT=8081
-
-      # Override des configurations Spring qui pourraient utiliser localhost
-      - SPRING_PAINTER_SERVICE_URL=http://painter:8081
-      - SPRING_PAINTER_BASE_URL=http://painter:8081
-      - SPRING_PAINTER_URL=http://painter:8081
-
-      # Configuration générale Spring
       - SPRING_LIQUIBASE_ENABLED=false
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      # PAS de propriétés Hikari problématiques
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
-      - SERVER_PORT=8080
-      - SERVER_ADDRESS=0.0.0.0
-
-      # Force la configuration réseau
-      - JAVA_OPTS=-Dpainter.service.url=http://painter:8081 -Dpainter.base.url=http://painter:8081
-
     ports:
       - "8080:8080"
     networks:

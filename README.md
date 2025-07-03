@@ -1,242 +1,219 @@
-# 🃏 CardManager - Version Bitbucket
+# 🃏 CardManager - Gestionnaire de Collections de Cartes
 
-[![Docker](https://img.shields.io/badge/docker-ready-green.svg)](https://www.docker.com/)
-[![Bitbucket](https://img.shields.io/badge/bitbucket-ready-blue.svg)](https://bitbucket.org/)
-[![SSH](https://img.shields.io/badge/auth-ssh-orange.svg)](#configuration-ssh)
+<div align="center">
 
-**Version adaptée pour les dépôts Bitbucket privés de PCaFXC**
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](https://docker.com)
+[![MariaDB](https://img.shields.io/badge/MariaDB-11.2-orange?logo=mariadb)](https://mariadb.org)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-green?logo=spring)](https://spring.io)
+[![Nginx](https://img.shields.io/badge/Nginx-Alpine-brightgreen?logo=nginx)](https://nginx.org)
 
-## 🚀 Démarrage ultra-rapide
+**Système complet de gestion de collections de cartes avec upload d'images et interface web**
 
-### Prérequis
-- Docker Desktop installé
-- Accès SSH configuré pour Bitbucket
-- Clé SSH ajoutée à votre compte Bitbucket
+[🇫🇷 Français](#français) | [🇬🇧 English](#english)
 
-### Installation en 3 étapes
+</div>
+
+---
+
+## 🇫🇷 Français
+
+### ⚡ Démarrage rapide
 
 ```bash
-# 1. Cloner ce projet
-git clone https://github.com/votre-compte/docker-cardmanager-bitbucket.git
+# 1. Cloner le projet
+git clone https://github.com/ialame/docker-cardmanager-bitbucket.git
 cd docker-cardmanager-bitbucket
 
-# 2. Démarrer (configure automatiquement l'environnement)
-chmod +x start-bitbucket.sh
-./start-bitbucket.sh
+# 2. Démarrer les services
+docker-compose up -d
 
-# 3. Accéder à l'application
-# http://localhost:8080
+# 3. Ouvrir l'application
+open http://localhost:8080
 ```
 
-⏱️ **Temps d'installation :** 10-15 minutes (premier démarrage)
+**⏱️ Temps d'installation :** 5-10 minutes  
+**🎯 Prêt à l'emploi** avec base de données préconfigurée
 
----
+### 🌟 Fonctionnalités
 
-## 🏗️ Architecture
+- 🃏 **Gestion complète** de collections de cartes Pokemon
+- 📸 **Upload et traitement** d'images haute qualité
+- 🗄️ **Base de données** persistante MariaDB
+- 🌐 **Interface web** moderne et intuitive
+- 🔄 **API REST** pour intégrations externes
+- 📦 **Déploiement Docker** en un clic
 
-| Service | Port | Source Bitbucket | Branche |
-|---------|------|------------------|---------|
-| **GestionCarte** | 8080 | `pcafxc/gestioncarte` | `feature/card-manager-511` |
-| **Painter** | 8081 | `pcafxc/painter` | `feature/card-manager-511` |
-| **Mason** | - | `pcafxc/mason` | `feature/RETRIEVER-511` |
-| **MariaDB** | 3307 | - | Base locale |
-| **Nginx** | 8082 | - | Serveur d'images |
+### 🏗️ Architecture
 
-### 🔄 Workflow de build
 ```
-Dépôts Bitbucket SSH → Clone → Maven Build → Docker Images → Services
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   GestionCarte  │    │     Painter     │    │     MariaDB     │
+│   (Frontend)    │◄──►│  (Images API)   │    │   (Database)    │
+│   Port: 8080    │    │   Port: 8081    │    │   Port: 3308    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                       ┌─────────────────┐
+                       │      Nginx      │
+                       │ (Images Server) │
+                       │   Port: 8082    │
+                       └─────────────────┘
 ```
 
----
+### 📚 Documentation
 
-## ⚙️ Configuration
+| Document | Description |
+|----------|-------------|
+| **[📖 Guide d'installation](docs/FR/DEPLOIEMENT-FR.md)** | Installation détaillée step-by-step |
+| **[❓ FAQ](docs/FR/FAQ-FR.md)** | Questions fréquentes et solutions |
+| **[🔧 Guide technique](docs/FR/TECHNIQUE-FR.md)** | Configuration avancée |
 
-### Configuration SSH (obligatoire)
-
-1. **Générer une clé SSH** (si pas encore fait) :
-   ```bash
-   ssh-keygen -t ed25519 -C "votre.email@example.com"
-   ```
-
-2. **Ajouter la clé à Bitbucket** :
-   ```bash
-   # Copier la clé publique
-   cat ~/.ssh/id_ed25519.pub
-   
-   # L'ajouter dans Bitbucket → Settings → SSH keys
-   ```
-
-3. **Tester la connexion** :
-   ```bash
-   ssh -T git@bitbucket.org
-   # Doit afficher : "authenticated via ssh"
-   ```
-
-### Variables d'environnement (.env)
-
-Le fichier `.env` est créé automatiquement avec :
+### 🚀 Scripts d'automatisation
 
 ```bash
-# Dépôts Bitbucket
+# Démarrage
+./scripts/start.sh
+
+# Arrêt
+./scripts/stop.sh
+
+# Diagnostic
+./scripts/diagnostic.sh
+
+# Sauvegarde
+./scripts/backup.sh
+```
+
+---
+
+## 🇬🇧 English
+
+### ⚡ Quick Start
+
+```bash
+# 1. Clone the project
+git clone https://github.com/ialame/docker-cardmanager-bitbucket.git
+cd docker-cardmanager-bitbucket
+
+# 2. Start services
+docker-compose up -d
+
+# 3. Open application
+open http://localhost:8080
+```
+
+**⏱️ Installation time:** 5-10 minutes  
+**🎯 Ready to use** with preconfigured database
+
+### 🌟 Features
+
+- 🃏 **Complete management** of Pokemon card collections
+- 📸 **Upload and processing** of high-quality images
+- 🗄️ **Persistent database** MariaDB
+- 🌐 **Modern web interface** and intuitive
+- 🔄 **REST API** for external integrations
+- 📦 **Docker deployment** with one click
+
+### 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   GestionCarte  │    │     Painter     │    │     MariaDB     │
+│   (Frontend)    │◄──►│  (Images API)   │    │   (Database)    │
+│   Port: 8080    │    │   Port: 8081    │    │   Port: 3308    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                       ┌─────────────────┐
+                       │      Nginx      │
+                       │ (Images Server) │
+                       │   Port: 8082    │
+                       └─────────────────┘
+```
+
+### 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[📖 Installation Guide](docs/EN/DEPLOYMENT-EN.md)** | Detailed step-by-step installation |
+| **[❓ FAQ](docs/EN/FAQ-EN.md)** | Frequently asked questions and solutions |
+| **[🔧 Technical Guide](docs/EN/TECHNICAL-EN.md)** | Advanced configuration |
+
+### 🚀 Automation Scripts
+
+```bash
+# Start
+./scripts/start.sh
+
+# Stop
+./scripts/stop.sh
+
+# Diagnostic
+./scripts/diagnostic.sh
+
+# Backup
+./scripts/backup.sh
+```
+
+---
+
+## 🔧 Configuration
+
+### Prérequis / Prerequisites
+
+- **Docker** 24.0+
+- **Docker Compose** 2.0+
+- **Git** (optionnel/optional)
+- **4GB RAM** minimum
+
+### Variables d'environnement / Environment Variables
+
+Copiez `.env.template` vers `.env` et ajustez selon vos besoins.  
+Copy `.env.template` to `.env` and adjust as needed.
+
+```bash
+# Dépôts Bitbucket / Bitbucket Repositories
 MASON_REPO_URL=git@bitbucket.org:pcafxc/mason.git
 PAINTER_REPO_URL=git@bitbucket.org:pcafxc/painter.git
 GESTIONCARTE_REPO_URL=git@bitbucket.org:pcafxc/gestioncarte.git
 
-# Branches de développement
+# Branches de développement / Development Branches
 MASON_BRANCH=feature/RETRIEVER-511
 PAINTER_BRANCH=feature/card-manager-511
 GESTIONCARTE_BRANCH=feature/card-manager-511
 
-# Base de données locale
-LOCAL_DB_USER=ia
-LOCAL_DB_PASS=foufafou
-LOCAL_DB_NAME=dev
+# Ports réseau / Network Ports
+GESTIONCARTE_PORT=8080
+PAINTER_PORT=8081
+NGINX_PORT=8082
+DB_PORT=3308
 ```
 
 ---
 
-## 🛠️ Commandes utiles
+## 🆘 Support
 
-### Scripts principaux
-```bash
-./start-bitbucket.sh        # 🚀 Démarrage complet
-./diagnostic-bitbucket.sh   # 🔍 Diagnostic complet
-```
+### 🐛 Signaler un bug / Report a Bug
 
-### Docker Compose
-```bash
-docker-compose ps           # État des services
-docker-compose logs -f      # Logs en temps réel
-docker-compose down         # Arrêter tous les services
-docker-compose restart      # Redémarrer
-```
+1. Consultez la [FAQ](docs/FR/FAQ-FR.md) / Check the [FAQ](docs/EN/FAQ-EN.md)
+2. Exécutez le diagnostic / Run diagnostic: `./scripts/diagnostic.sh`
+3. Créez une issue GitHub avec les logs / Create GitHub issue with logs
 
-### Debug spécifique
-```bash
-# Logs d'un service spécifique
-docker-compose logs -f gestioncarte
-docker-compose logs -f painter
+### 💬 Communauté / Community
 
-# Reconstruire une image
-docker-compose build --no-cache gestioncarte
-
-# Test SSH dans un conteneur
-docker run --rm -it -v ~/.ssh:/root/.ssh alpine/git ssh -T git@bitbucket.org
-```
+- **GitHub Issues** : Bugs et demandes de fonctionnalités / Bugs and feature requests
+- **Documentation** : Guides complets / Complete guides
 
 ---
 
-## 🎯 URLs d'accès
+## 📄 Licence / License
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| **Application** | http://localhost:8080 | Interface principale CardManager |
-| **API Painter** | http://localhost:8081 | Service de traitement d'images |
-| **Images** | http://localhost:8082/images/ | Galerie d'images uploadées |
-| **Health Checks** | http://localhost:8080/actuator/health | Santé de l'application |
+Ce projet est sous licence MIT. Voir [LICENSE](LICENSE) pour plus de détails.  
+This project is licensed under MIT. See [LICENSE](LICENSE) for details.
 
 ---
 
-## 🔧 Développement
+<div align="center">
 
-### Utiliser une branche différente
+**🎉 Développé avec ❤️ pour les collectionneurs de cartes**  
+**🎉 Built with ❤️ for card collectors**
 
-Modifiez `.env` et reconstruisez :
-```bash
-# Modifier la branche dans .env
-PAINTER_BRANCH=feature/nouvelle-feature
-
-# Reconstruire
-docker-compose build --no-cache painter
-docker-compose up -d
-```
-
-### Base de données locale
-
-Pour utiliser votre MariaDB local existant :
-```bash
-# Connexion à votre base
-mysql -h localhost -P 3306 -u ia -pfoufafou dev
-
-# Dans .env, configurez :
-LOCAL_DB_HOST=host.docker.internal  # Pour accéder à l'hôte depuis Docker
-```
-
-### Développement avec hot-reload
-
-Pour développer sans rebuild constant :
-```bash
-# Monter le code source en volume (ajoutez dans docker-compose.yml)
-volumes:
-  - ./src:/usr/src/app/src
-```
-
----
-
-## 🐛 Dépannage
-
-### Problèmes fréquents
-
-#### 1. Erreur d'authentification SSH
-```bash
-# Vérifier la connexion Bitbucket
-ssh -T git@bitbucket.org
-
-# Démarrer SSH agent si nécessaire
-eval $(ssh-agent -s)
-ssh-add ~/.ssh/id_rsa
-```
-
-#### 2. Build qui échoue
-```bash
-# Nettoyer et reconstruire
-docker-compose down
-docker system prune -f
-./start-bitbucket.sh
-```
-
-#### 3. Services qui ne démarrent pas
-```bash
-# Diagnostic complet
-./diagnostic-bitbucket.sh
-
-# Logs détaillés
-docker-compose logs
-```
-
-#### 4. Port déjà utilisé
-```bash
-# Trouver le processus
-lsof -i :8080
-
-# Ou changer le port dans docker-compose.yml
-ports:
-  - "9080:8080"  # Au lieu de 8080:8080
-```
-
-### Debug SSH dans Docker
-
-```bash
-# Test SSH dans un conteneur
-docker run --rm -it \
-  -v ~/.ssh:/root/.ssh:ro \
-  -v $(pwd):/workspace \
-  alpine/git sh
-
-# Dans le conteneur :
-ssh -T git@bitbucket.org
-git clone git@bitbucket.org:pcafxc/mason.git
-```
-
----
-
-## 📊 Monitoring
-
-### Health Checks automatiques
-
-Les services incluent des health checks :
-```bash
-# Vérifier la santé
-docker-compose ps
-
-# Status dét
+</div>
