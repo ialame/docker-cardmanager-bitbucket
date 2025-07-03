@@ -1,16 +1,26 @@
 services:
-  mason:
-    build:
-      context: .
-      dockerfile: docker/mason/Dockerfile
-      args:
-        MASON_REPO_URL: ${MASON_REPO_URL:-git@bitbucket.org:pcafxc/mason.git}
-        MASON_BRANCH: ${MASON_BRANCH:-feature/RETRIEVER-511}
+  mariadb-standalone:
+    image: mariadb:11.4
+    container_name: cardmanager-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${LOCAL_DB_NAME:-dev}
+      MYSQL_USER: ${LOCAL_DB_USER:-ia}
+      MYSQL_PASSWORD: ${LOCAL_DB_PASS:-foufafou}
+    ports:
+      - "${DB_PORT:-3308}:3306"
     volumes:
-      - maven_cache:/root/.m2
-      - ~/.ssh:/root/.ssh:ro
+      - cardmanager_db_data:/var/lib/mysql
+      - ./init-db:/docker-entrypoint-initdb.d:ro
     networks:
       - cardmanager-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${LOCAL_DB_USER:-ia}", "-p${LOCAL_DB_PASS:-foufafou}"]
+      start_period: 120s
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    restart: unless-stopped
 
   painter:
     build:
@@ -21,42 +31,26 @@ services:
         MASON_BRANCH: ${MASON_BRANCH:-feature/RETRIEVER-511}
         PAINTER_REPO_URL: ${PAINTER_REPO_URL:-git@bitbucket.org:pcafxc/painter.git}
         PAINTER_BRANCH: ${PAINTER_BRANCH:-feature/card-manager-511}
+    container_name: cardmanager-painter
+    depends_on:
+      mariadb-standalone:
+        condition: service_healthy
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_USERNAME=ia
+      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_PROFILES_ACTIVE=docker
+      - PAINTER_IMAGE_STORAGE_PATH=/app/images
+      - RETRIEVER_SECURITY_LOGIN_ENABLED=false
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_LIQUIBASE_ENABLED=false
     ports:
       - "${PAINTER_PORT:-8081}:8081"
     volumes:
       - cardmanager_images:/app/images
-      - maven_cache:/root/.m2
-      - ~/.ssh:/root/.ssh:ro
-    environment:
-      - PAINTER_IMAGE_STORAGE_PATH=/app/images
-      - SPRING_PROFILES_ACTIVE=docker
-      - JAVA_OPTS=-Xms512m -Xmx1024m
-      # DATABASE CONFIG
-      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
-      - SPRING_DATASOURCE_USERNAME=ia
-      - SPRING_DATASOURCE_PASSWORD=foufafou
-      # HIBERNATE CONFIG - CRUCIAL
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=none
-      - SPRING_LIQUIBASE_ENABLED=false
-      # ACTUATOR CONFIG - FIXED
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=*
-      - MANAGEMENT_ENDPOINTS_WEB_BASE_PATH=/actuator
-      - MANAGEMENT_ENDPOINT_HEALTH_ENABLED=true
-      - MANAGEMENT_ENDPOINT_INFO_ENABLED=true
-      # SERVER CONFIG
-      - SERVER_PORT=8081
-      - SERVER_SERVLET_CONTEXT_PATH=/
-      # LOGGING
-      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG
-
-
     networks:
       - cardmanager-network
-    depends_on:
-      mason:
-        condition: service_completed_successfully
-      mariadb-standalone:
-        condition: service_healthy
     restart: unless-stopped
 
   gestioncarte:
@@ -70,74 +64,49 @@ services:
         PAINTER_BRANCH: ${PAINTER_BRANCH:-feature/card-manager-511}
         GESTIONCARTE_REPO_URL: ${GESTIONCARTE_REPO_URL:-git@bitbucket.org:pcafxc/gestioncarte.git}
         GESTIONCARTE_BRANCH: ${GESTIONCARTE_BRANCH:-feature/card-manager-511}
-    ports:
-      - "8080:8080"
-    volumes:
-      - cardmanager_images:/app/images
-      - maven_cache:/root/.m2
-      - ~/.ssh:/root/.ssh:ro
+    container_name: cardmanager-gestioncarte
+    depends_on:
+      mariadb-standalone:
+        condition: service_healthy
+      painter:
+        condition: service_started
     environment:
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-docker}
-      - "JAVA_OPTS=${JAVA_OPTS_GESTIONCARTE:--Xms512m -Xmx1024m}"
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_PROFILES_ACTIVE=docker
       - PAINTER_SERVICE_URL=http://painter:8081
+      - PAINTER_BASE_URL=http://painter:8081
+      - PAINTER_PUBLIC_URL=http://painter:8081
+      - RETRIEVER_SECURITY_LOGIN_ENABLED=false
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_LIQUIBASE_ENABLED=false
-      - SERVER_SERVLET_CONTEXT_PATH=/
-      - MANAGEMENT_ENDPOINTS_WEB_BASE_PATH=/actuator
-    networks:
-      - cardmanager-network
-    depends_on:
-      - mason
-      - painter
-      - mariadb-standalone
-    restart: unless-stopped
-
-  mariadb-standalone:
-    image: ${DATABASE_IMAGE:-mariadb:11.4}
-    environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root123}
-      - MYSQL_DATABASE=${LOCAL_DB_NAME:-dev}
-      - MYSQL_USER=${LOCAL_DB_USER:-ia}
-      - MYSQL_PASSWORD=${LOCAL_DB_PASS:-foufafou}
-      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
-      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
     ports:
-      - "${DB_PORT:-3308}:3306"
-    healthcheck:
-        test: [ "CMD", "sh", "-c", "mariadb -u ia -pfoufafou dev -e 'SELECT 1;' || mysql -u ia -pfoufafou dev -e 'SELECT 1;'" ]
-        interval: 30s
-        timeout: 10s
-        retries: 10
-        start_period: 60s
-    volumes:
-      - cardmanager_db_data:/var/lib/mysql
-      - ./init-db:/docker-entrypoint-initdb.d:ro
+      - "${GESTIONCARTE_PORT:-8080}:8080"
     networks:
       - cardmanager-network
     restart: unless-stopped
 
   nginx-images:
     image: nginx:alpine
+    container_name: cardmanager-nginx
     ports:
       - "${NGINX_PORT:-8082}:80"
     volumes:
       - cardmanager_images:/usr/share/nginx/html/images:ro
-      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    networks:
-      - cardmanager-network
+      - ./nginx-images.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - painter
+    networks:
+      - cardmanager-network
     restart: unless-stopped
 
 volumes:
   cardmanager_db_data:
-    driver: local
+    external: false
   cardmanager_images:
-    driver: local
-  maven_cache:
-    driver: local
+    external: false
 
 networks:
   cardmanager-network:

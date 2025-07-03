@@ -35,21 +35,29 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
-      # HIBERNATE CONFIG - CRUCIAL
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=none
-      - SPRING_LIQUIBASE_ENABLED=false
-      # ACTUATOR CONFIG - FIXED
+      # ACTUATOR CONFIG - INTENSIVE CONFIGURATION
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=*
       - MANAGEMENT_ENDPOINTS_WEB_BASE_PATH=/actuator
       - MANAGEMENT_ENDPOINT_HEALTH_ENABLED=true
+      - MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
+      - MANAGEMENT_ENDPOINT_HEALTH_SHOW_COMPONENTS=always
       - MANAGEMENT_ENDPOINT_INFO_ENABLED=true
+      - MANAGEMENT_ENDPOINTS_ENABLED_BY_DEFAULT=true
+      - MANAGEMENT_ENDPOINT_METRICS_ENABLED=true
+      - MANAGEMENT_HEALTH_DISKSPACE_ENABLED=true
+      - MANAGEMENT_HEALTH_DB_ENABLED=true
+      # SPRING BOOT AUTO-CONFIGURATION
+      - SPRING_AUTOCONFIGURE_EXCLUDE=
+      - SPRING_BOOT_AUTOCONFIGURE_EXCLUDE=
       # SERVER CONFIG
       - SERVER_PORT=8081
       - SERVER_SERVLET_CONTEXT_PATH=/
+      # HIBERNATE CONFIG
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=none
+      - SPRING_LIQUIBASE_ENABLED=false
       # LOGGING
-      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=DEBUG
-
-
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB=INFO
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_BOOT_ACTUATE=DEBUG
     networks:
       - cardmanager-network
     depends_on:
@@ -71,14 +79,14 @@ services:
         GESTIONCARTE_REPO_URL: ${GESTIONCARTE_REPO_URL:-git@bitbucket.org:pcafxc/gestioncarte.git}
         GESTIONCARTE_BRANCH: ${GESTIONCARTE_BRANCH:-feature/card-manager-511}
     ports:
-      - "8080:8080"
+      - "${GESTIONCARTE_PORT:-8080}:8080"
     volumes:
       - cardmanager_images:/app/images
       - maven_cache:/root/.m2
       - ~/.ssh:/root/.ssh:ro
     environment:
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-docker}
-      - "JAVA_OPTS=${JAVA_OPTS_GESTIONCARTE:--Xms512m -Xmx1024m}"
+      - SPRING_PROFILES_ACTIVE=docker
+      - JAVA_OPTS=-Xms512m -Xmx1024m
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
@@ -95,28 +103,25 @@ services:
     restart: unless-stopped
 
   mariadb-standalone:
-    image: ${DATABASE_IMAGE:-mariadb:11.4}
+    image: mariadb:11.4
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root123}
-      - MYSQL_DATABASE=${LOCAL_DB_NAME:-dev}
-      - MYSQL_USER=${LOCAL_DB_USER:-ia}
-      - MYSQL_PASSWORD=${LOCAL_DB_PASS:-foufafou}
-      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
-      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${LOCAL_DB_NAME:-dev}
+      MYSQL_USER: ${LOCAL_DB_USER:-ia}
+      MYSQL_PASSWORD: ${LOCAL_DB_PASS:-foufafou}
     ports:
       - "${DB_PORT:-3308}:3306"
-    healthcheck:
-        test: [ "CMD", "sh", "-c", "mariadb -u ia -pfoufafou dev -e 'SELECT 1;' || mysql -u ia -pfoufafou dev -e 'SELECT 1;'" ]
-        interval: 30s
-        timeout: 10s
-        retries: 10
-        start_period: 60s
     volumes:
       - cardmanager_db_data:/var/lib/mysql
       - ./init-db:/docker-entrypoint-initdb.d:ro
     networks:
       - cardmanager-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${LOCAL_DB_USER:-ia}", "-p${LOCAL_DB_PASS:-foufafou}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   nginx-images:
     image: nginx:alpine
@@ -127,17 +132,15 @@ services:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - cardmanager-network
-    depends_on:
-      - painter
     restart: unless-stopped
 
 volumes:
   cardmanager_db_data:
-    driver: local
+    external: false
   cardmanager_images:
-    driver: local
+    external: false
   maven_cache:
-    driver: local
+    external: false
 
 networks:
   cardmanager-network:
