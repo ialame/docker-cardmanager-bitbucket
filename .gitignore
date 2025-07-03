@@ -1,48 +1,8 @@
-HELP.md
-target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+# =============================================================================
+# CardManager - .gitignore optimisé
+# =============================================================================
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
-.vscode/
-2025-06-19_00-00-01.sql
-backup.sql
-docker/mariadb-test/data/
-init-db/
-*.sql
-structure.txt
-volumes/
-.env.local
-toto.txt
-# CardManager - .gitignore
-
-# Volumes Docker locaux (si créés dans le projet)
+# Volumes Docker locaux
 volumes/
 data/
 storage/
@@ -50,6 +10,7 @@ storage/
 # Sauvegardes automatiques
 .cleanup-backup-*/
 .backup-*/
+backup-*/
 
 # Logs
 *.log
@@ -60,6 +21,9 @@ logs/
 Thumbs.db
 *.tmp
 *.temp
+*.swp
+*.swo
+*~
 
 # Configuration locale
 docker-compose.override.yml
@@ -69,18 +33,47 @@ docker-compose.override.yml
 # IDE et éditeurs
 .idea/
 .vscode/
-*.swp
-*.swo
-*~
+*.iml
+*.ipr
+*.iws
 
-# Données sensibles (si vous en ajoutez)
+# Build artifacts
+target/
+build/
+dist/
+node_modules/
+.mvn/
+
+# Données sensibles
 secrets/
 certificates/
 *.key
 *.pem
+*.crt
 
-# Build artifacts (si vous buildez localement)
-target/
-build/
-dist/
-ssh-keys/
+# Fichiers de test et debug
+debug_*.sh
+fix_*.sh
+test_*.sh
+*_test.sh
+*_debug.sh
+monitoring_*.sh
+
+# Fichiers SQL temporaires
+*.sql
+!init-db/*.sql
+
+# Fichiers Docker temporaires
+docker-compose-*.yml
+docker-compose.*.yml
+*.backup
+
+# Fichiers de développement
+structure.txt
+toto.*
+prompt.txt
+readme
+cleanup_severe.sh
+docs/FR/
+init-db
+

@@ -1,22 +1,18 @@
-# syntax=docker/dockerfile:1
-
-FROM maven:3.9.6-eclipse-temurin-21 AS builder
-
-# Arguments de build
+# Build arguments
 ARG MASON_REPO_URL=git@bitbucket.org:pcafxc/mason.git
 ARG MASON_BRANCH=feature/RETRIEVER-511
 
-# Installer git et openssh-client pour SSH
+# Install git and openssh-client for SSH
 RUN apt-get update && apt-get install -y openssh-client git && rm -rf /var/lib/apt/lists/*
 
-# Configuration Git
+# Git configuration
 RUN git config --global user.email "docker@cardmanager.local" && \
     git config --global user.name "Docker Builder"
 
-# Copier les clés SSH depuis le contexte de build
+# Copy SSH keys from build context
 COPY ./docker/ssh-keys/ /root/.ssh/
 
-# Configurer les permissions SSH
+# Configure SSH permissions
 RUN chmod 700 /root/.ssh && \
     chmod 600 /root/.ssh/bitbucket_ed25519 && \
     chmod 644 /root/.ssh/bitbucket_ed25519.pub && \
@@ -24,42 +20,42 @@ RUN chmod 700 /root/.ssh && \
     ssh-keyscan -H bitbucket.org >> /root/.ssh/known_hosts && \
     chmod 644 /root/.ssh/known_hosts
 
-# Répertoire de travail
+# Working directory
 WORKDIR /usr/src/app
 
-# Créer la structure Maven parent comme attendue
-# 1. Créer le POM parent cardmanager
+# Create expected Maven parent structure
+# 1. Create cardmanager parent POM
 COPY ./docker/cardmanager-parent.xml ./pom.xml
 
-# Debug: Vérifier le POM parent
-RUN echo "=== POM parent cardmanager ===" && \
+# Debug: Verify parent POM
+RUN echo "=== cardmanager parent POM ===" && \
     head -20 pom.xml
 
-# 2. Cloner Mason dans le sous-répertoire
+# 2. Clone Mason into subdirectory
 RUN git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
 
-# Debug: Vérifier la structure
-RUN echo "=== Structure créée ===" && \
+# Debug: Verify structure
+RUN echo "=== Created structure ===" && \
     ls -la && \
-    echo "=== POM de Mason ===" && \
+    echo "=== Mason POM ===" && \
     head -20 mason/pom.xml
 
-# 3. Construire d'abord le parent
+# 3. Build parent first
 RUN mvn install -N
 
-# 4. Construire Mason
+# 4. Build Mason
 WORKDIR /usr/src/app/mason
 RUN mvn clean install -DskipTests -B
 
-# Image finale légère pour partager les artefacts
+# Lightweight final image for sharing artifacts
 FROM alpine:latest
 WORKDIR /app
 
-# Copier les artefacts Maven construits
+# Copy built Maven artifacts
 COPY --from=builder /root/.m2/repository /opt/maven-repo
 
-# Marquer comme volume pour partage avec autres services
+# Mark as volume for sharing with other services
 VOLUME ["/opt/maven-repo"]
 
-# Point d'entrée factice (ce service sert juste à construire les dépendances)
+# Dummy entry point (this service only builds dependencies)
 CMD ["echo", "Mason artifacts built successfully"]

@@ -36,6 +36,30 @@ RUN git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
 # Cloner Painter
 RUN git clone --depth 1 --branch ${PAINTER_BRANCH} ${PAINTER_REPO_URL} painter
 
+# Copier le fichier de dépendance
+COPY ./docker/painter/fix/actuator-dependency.xml /tmp/actuator-dependency.xml
+
+# SOLUTION CORRIGÉE : Ajouter la dépendance avec XML valide
+RUN cd painter/painter && \
+    # Trouver la ligne <dependencies> et insérer après
+    awk '/<dependencies>/ {print; system("cat /tmp/actuator-dependency.xml"); next} 1' pom.xml > pom.xml.tmp && \
+    mv pom.xml.tmp pom.xml
+
+# Vérifier que la dépendance a été ajoutée correctement
+RUN echo "=== Dépendance Actuator ajoutée au pom.xml ===" && \
+    grep -A 4 -B 1 "spring-boot-starter-actuator" painter/painter/pom.xml
+
+# Vérifier que le XML est valide
+RUN echo "=== Vérification XML du pom.xml ===" && \
+    xmllint --noout painter/painter/pom.xml && echo "XML valide" || echo "XML invalide"
+
+# Remplacer application.properties avec configuration Actuator
+COPY ./docker/painter/config/application.properties painter/painter/src/main/resources/application.properties
+
+# Vérifier le fichier application.properties
+RUN echo "=== Configuration Actuator dans application.properties ===" && \
+    grep -A 5 "management" painter/painter/src/main/resources/application.properties
+
 # Construire le parent
 RUN mvn install -N
 
@@ -43,18 +67,22 @@ RUN mvn install -N
 WORKDIR /usr/src/app/mason
 RUN mvn clean install -DskipTests -B
 
-# Construire Painter
+# Construire Painter avec dépendance Actuator
 WORKDIR /usr/src/app/painter
 RUN mvn clean package -DskipTests -B
+
+# Vérifier que Actuator est maintenant dans le JAR
+RUN echo "=== Vérification Actuator dans le JAR ===" && \
+    jar tf painter/target/*.jar | grep -i actuator | head -5
 
 # Image finale pour l'exécution
 FROM eclipse-temurin:21-jre-alpine
 
 LABEL maintainer="cardmanager@example.com"
-LABEL description="Painter Service - Image processing for CardManager"
+LABEL description="Painter Service with Actuator"
 
-# Installer wget pour le health check
-RUN apk add --no-cache wget
+# Installer wget et xmllint pour les vérifications
+RUN apk add --no-cache wget libxml2-utils
 
 # Répertoire de travail
 WORKDIR /app
@@ -75,7 +103,7 @@ ENV SPRING_PROFILES_ACTIVE="docker"
 # Port d'exposition
 EXPOSE 8081
 
-# Health check
+# Health check avec Actuator
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
     CMD wget --quiet --tries=1 --spider http://localhost:8081/actuator/health || exit 1
 

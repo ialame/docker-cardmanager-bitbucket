@@ -26,46 +26,19 @@ services:
     depends_on:
       - mariadb-standalone
     environment:
-      # Base de données
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
-      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.mariadb.jdbc.Driver
-
-      # Profil actif
       - SPRING_PROFILES_ACTIVE=docker
-
-      # JPA
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
-      - SPRING_JPA_SHOW_SQL=false
-      - SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT=org.hibernate.dialect.MariaDBDialect
-
-      # Configuration Painter
       - PAINTER_IMAGE_STORAGE_PATH=/app/images
-      - PAINTER_SECURITY_LOGIN_ENABLED=false
-
-      # Liquibase
-      - SPRING_LIQUIBASE_ENABLED=false
-
-      # Actuator - FORMAT SPRING BOOT
+      # PAS de propriétés Hikari problématiques
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=INFO
       - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
       - MANAGEMENT_ENDPOINT_HEALTH_ENABLED=true
       - MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always
       - MANAGEMENT_ENDPOINTS_ENABLED_BY_DEFAULT=true
       - MANAGEMENT_SERVER_PORT=8081
-
-      # Upload
-      - SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE=10MB
-      - SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=10MB
-
-      # Sécurité
-      - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
-
-      # Logging
-      - LOGGING_LEVEL_ROOT=INFO
-      - LOGGING_LEVEL_COM_PCAGRADE=INFO
-      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=INFO
-
     ports:
       - "8081:8081"
     volumes:

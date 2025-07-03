@@ -1,0 +1,6 @@
+Host bitbucket.org
+    HostName bitbucket.org
+    User git
+    IdentityFile ~/.ssh/bitbucket_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking no
