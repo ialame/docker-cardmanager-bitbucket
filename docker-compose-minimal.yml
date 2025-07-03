@@ -1,0 +1,51 @@
+services:
+  mariadb-standalone:
+    image: mariadb:11.2
+    container_name: cardmanager-mariadb-test
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_DATABASE: dev
+      MARIADB_USER: ia
+      MARIADB_PASSWORD: foufafou
+      MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "false"
+    ports:
+      - "3309:3306"  # Port différent pour éviter conflits
+    volumes:
+      - mariadb_test_data:/var/lib/mysql
+    networks:
+      - test-network
+    restart: unless-stopped
+
+  painter:
+    image: docker-cardmanager-bitbuckit-painter:latest
+    container_name: cardmanager-painter-test
+    depends_on:
+      - mariadb-standalone
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
+      - SPRING_DATASOURCE_USERNAME=ia
+      - SPRING_DATASOURCE_PASSWORD=foufafou
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=create-drop
+      - PAINTER_IMAGE_STORAGE_PATH=/app/images
+      - SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT=60000
+      - SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=5
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK=DEBUG
+      - LOGGING_LEVEL_COM_ZAXXER_HIKARI=DEBUG
+    ports:
+      - "8091:8081"  # Port différent
+    volumes:
+      - test_images:/app/images
+    networks:
+      - test-network
+    restart: unless-stopped
+
+volumes:
+  mariadb_test_data:
+    driver: local
+  test_images:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge

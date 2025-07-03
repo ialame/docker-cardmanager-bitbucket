@@ -1,110 +1,104 @@
 #!/bin/bash
 
-echo "🔄 Restauration de la configuration fonctionnelle"
-echo "=============================================="
+# Couleurs
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# 1. Analyser les différences avec la version qui fonctionne
-echo "1. Analyse des différences avec la version fonctionnelle..."
+echo -e "${RED}🔍 Diagnostic approfondi : URL Painter toujours en localhost${NC}"
+echo "================================================================"
 
-echo "📋 DIFFÉRENCES IDENTIFIÉES :"
-echo "=============================="
-echo "✅ Version qui marche :"
-echo "   • Variable: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics"
-echo "   • Nginx config: ./nginx-images.conf (fichier spécifique)"
-echo "   • Volumes: cardmanager_images:/app/images (montage direct)"
-echo "   • MariaDB: healthcheck avec healthcheck.sh"
+echo -e "${YELLOW}1. Analyse du problème...${NC}"
+echo "❌ Malgré PAINTER_SERVICE_URL=http://painter:8081"
+echo "❌ GestionCarte utilise encore localhost:8081"
+echo "💡 Le code Java a probablement une URL hardcodée"
+
 echo ""
-echo "❌ Notre version actuelle :"
-echo "   • Pas de MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE"
-echo "   • Nginx config: ./docker/nginx/nginx.conf (fichier générique)"
-echo "   • Volumes: mêmes mais configuration différente"
-echo "   • Contrôleurs custom ajoutés manuellement"
+echo -e "${YELLOW}2. Investigation dans le conteneur GestionCarte...${NC}"
 
-# 2. Restaurer la configuration nginx de la version qui marche
+echo -e "${BLUE}🔍 Fichiers de configuration Spring dans le JAR :${NC}"
+docker exec cardmanager-gestioncarte sh -c "
+cd /app
+echo '=== Configuration application.properties ==='
+unzip -p app.jar BOOT-INF/classes/application.properties 2>/dev/null | grep -i painter || echo 'Pas de config painter dans application.properties'
+
+echo ''
+echo '=== Configuration application-docker.properties ==='
+unzip -p app.jar BOOT-INF/classes/application-docker.properties 2>/dev/null | grep -i painter || echo 'Pas de config painter dans application-docker.properties'
+
+echo ''
+echo '=== Recherche de localhost dans les configs ==='
+unzip -p app.jar BOOT-INF/classes/application*.properties 2>/dev/null | grep -i localhost || echo 'Pas de localhost trouvé dans les configs'
+
+echo ''
+echo '=== Variables d'environnement actuelles ==='
+env | grep -i painter
+"
+
 echo ""
-echo "2. Restauration de la configuration nginx fonctionnelle..."
+echo -e "${YELLOW}3. Test de résolution DNS dans le conteneur...${NC}"
 
-cat > nginx-images.conf << 'EOF'
-server {
-    listen 80;
-    server_name localhost;
+echo -e "${BLUE}🌐 Test de résolution DNS :${NC}"
+docker exec cardmanager-gestioncarte sh -c "
+echo 'Résolution de painter :'
+nslookup painter 2>/dev/null || echo 'nslookup non disponible'
 
-    location /images/ {
-        alias /usr/share/nginx/html/images/;
-        add_header Access-Control-Allow-Origin *;
-        autoindex on;
-        autoindex_exact_size off;
-        autoindex_localtime on;
-    }
+echo 'Test ping painter :'
+ping -c 1 painter 2>/dev/null || echo 'ping échoué'
 
-    location / {
-        return 200 '<!DOCTYPE html><html><head><title>CardManager Images</title></head><body><h1>🖼️ CardManager Images Server</h1><p><a href="/images/">Browse Images</a></p></body></html>';
-        add_header Content-Type text/html;
-    }
+echo 'Test port 8081 sur painter :'
+nc -zv painter 8081 2>&1 || echo 'netcat non disponible, test avec wget'
 
-    location /health {
-        return 200 '{"status":"ok","service":"images"}';
-        add_header Content-Type application/json;
-    }
-}
-EOF
+echo 'Test HTTP painter :'
+wget -qO- --timeout=5 http://painter:8081/ 2>/dev/null | head -5 || echo 'wget échec'
+"
 
-echo "✅ Configuration nginx-images.conf restaurée"
-
-# 3. Créer un docker-compose.yml basé sur la version qui fonctionne
 echo ""
-echo "3. Restauration du docker-compose.yml fonctionnel..."
+echo -e "${YELLOW}4. Solution : Override de la configuration par variables d'environnement...${NC}"
 
-cat > docker-compose.yml << 'EOF'
+# Créer une configuration qui force TOUTES les variantes possibles
+cat > docker-compose-force-painter.yml << 'EOF'
 services:
   mariadb-standalone:
-    image: mariadb:11.4
+    image: mariadb:11.2
     container_name: cardmanager-mariadb
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
-      MYSQL_DATABASE: ${LOCAL_DB_NAME:-dev}
-      MYSQL_USER: ${LOCAL_DB_USER:-ia}
-      MYSQL_PASSWORD: ${LOCAL_DB_PASS:-foufafou}
+      MARIADB_ROOT_PASSWORD: root_password
+      MARIADB_DATABASE: dev
+      MARIADB_USER: ia
+      MARIADB_PASSWORD: foufafou
+      MARIADB_CHARACTER_SET_SERVER: utf8mb4
+      MARIADB_COLLATION_SERVER: utf8mb4_unicode_ci
     ports:
-      - "${DB_PORT:-3308}:3306"
+      - "3308:3306"
     volumes:
       - cardmanager_db_data:/var/lib/mysql
       - ./init-db:/docker-entrypoint-initdb.d:ro
     networks:
       - cardmanager-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${LOCAL_DB_USER:-ia}", "-p${LOCAL_DB_PASS:-foufafou}"]
-      start_period: 120s
-      interval: 10s
-      timeout: 10s
-      retries: 20
     restart: unless-stopped
 
   painter:
     build:
       context: .
       dockerfile: docker/painter/Dockerfile
-      args:
-        MASON_REPO_URL: ${MASON_REPO_URL:-git@bitbucket.org:pcafxc/mason.git}
-        MASON_BRANCH: ${MASON_BRANCH:-feature/RETRIEVER-511}
-        PAINTER_REPO_URL: ${PAINTER_REPO_URL:-git@bitbucket.org:pcafxc/painter.git}
-        PAINTER_BRANCH: ${PAINTER_BRANCH:-feature/card-manager-511}
     container_name: cardmanager-painter
     depends_on:
-      mariadb-standalone:
-        condition: service_healthy
+      - mariadb-standalone
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
       - SPRING_PROFILES_ACTIVE=docker
-      - PAINTER_IMAGE_STORAGE_PATH=/app/images
-      - RETRIEVER_SECURITY_LOGIN_ENABLED=false
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
-      - SPRING_LIQUIBASE_ENABLED=false
+      - PAINTER_IMAGE_STORAGE_PATH=/app/images
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
+      - SERVER_PORT=8081
+      - SERVER_ADDRESS=0.0.0.0
     ports:
-      - "${PAINTER_PORT:-8081}:8081"
+      - "8081:8081"
     volumes:
       - cardmanager_images:/app/images
     networks:
@@ -115,33 +109,45 @@ services:
     build:
       context: .
       dockerfile: docker/gestioncarte/Dockerfile
-      args:
-        MASON_REPO_URL: ${MASON_REPO_URL:-git@bitbucket.org:pcafxc/mason.git}
-        MASON_BRANCH: ${MASON_BRANCH:-feature/RETRIEVER-511}
-        PAINTER_REPO_URL: ${PAINTER_REPO_URL:-git@bitbucket.org:pcafxc/painter.git}
-        PAINTER_BRANCH: ${PAINTER_BRANCH:-feature/card-manager-511}
-        GESTIONCARTE_REPO_URL: ${GESTIONCARTE_REPO_URL:-git@bitbucket.org:pcafxc/gestioncarte.git}
-        GESTIONCARTE_BRANCH: ${GESTIONCARTE_BRANCH:-feature/card-manager-511}
     container_name: cardmanager-gestioncarte
     depends_on:
-      mariadb-standalone:
-        condition: service_healthy
-      painter:
-        condition: service_started
+      - mariadb-standalone
+      - painter
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
       - SPRING_PROFILES_ACTIVE=docker
+
+      # FORCER TOUTES LES VARIANTES POSSIBLES D'URL PAINTER
       - PAINTER_SERVICE_URL=http://painter:8081
+      - PAINTER_API_BASE_URL=http://painter:8081
       - PAINTER_BASE_URL=http://painter:8081
-      - PAINTER_PUBLIC_URL=http://painter:8081
-      - RETRIEVER_SECURITY_LOGIN_ENABLED=false
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - PAINTER_URL=http://painter:8081
+      - PAINTER_HOST=painter
+      - PAINTER_PORT=8081
+      - PAINTER_ENDPOINT=http://painter:8081
+      - PAINTER_API_URL=http://painter:8081
+      - PAINTER_SERVICE_HOST=painter
+      - PAINTER_SERVICE_PORT=8081
+
+      # Override des configurations Spring qui pourraient utiliser localhost
+      - SPRING_PAINTER_SERVICE_URL=http://painter:8081
+      - SPRING_PAINTER_BASE_URL=http://painter:8081
+      - SPRING_PAINTER_URL=http://painter:8081
+
+      # Configuration générale Spring
       - SPRING_LIQUIBASE_ENABLED=false
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
+      - SERVER_PORT=8080
+      - SERVER_ADDRESS=0.0.0.0
+
+      # Force la configuration réseau
+      - JAVA_OPTS=-Dpainter.service.url=http://painter:8081 -Dpainter.base.url=http://painter:8081
+
     ports:
-      - "${GESTIONCARTE_PORT:-8080}:8080"
+      - "8080:8080"
     networks:
       - cardmanager-network
     restart: unless-stopped
@@ -150,247 +156,103 @@ services:
     image: nginx:alpine
     container_name: cardmanager-nginx
     ports:
-      - "${NGINX_PORT:-8082}:80"
+      - "8082:80"
     volumes:
       - cardmanager_images:/usr/share/nginx/html/images:ro
       - ./nginx-images.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - painter
     networks:
       - cardmanager-network
     restart: unless-stopped
+    depends_on:
+      - painter
 
 volumes:
   cardmanager_db_data:
-    external: false
+    driver: local
   cardmanager_images:
-    external: false
+    driver: local
 
 networks:
   cardmanager-network:
     driver: bridge
 EOF
 
-echo "✅ docker-compose.yml restauré selon la version fonctionnelle"
+echo -e "${YELLOW}5. Redémarrage avec la configuration forcée...${NC}"
 
-# 4. Restaurer le Dockerfile original (sans nos contrôleurs custom)
-echo ""
-echo "4. Restauration du Dockerfile Painter original..."
-
-if [ -f "docker/painter/Dockerfile.backup" ]; then
-    cp docker/painter/Dockerfile.backup docker/painter/Dockerfile
-    echo "✅ Dockerfile original restauré depuis la sauvegarde"
-else
-    # Créer un Dockerfile basique si pas de sauvegarde
-    cat > docker/painter/Dockerfile << 'EOF'
-FROM maven:3.9.6-eclipse-temurin-21 AS builder
-
-# Arguments de build
-ARG MASON_REPO_URL=git@bitbucket.org:pcafxc/mason.git
-ARG MASON_BRANCH=feature/RETRIEVER-511
-ARG PAINTER_REPO_URL=git@bitbucket.org:pcafxc/painter.git
-ARG PAINTER_BRANCH=feature/card-manager-511
-
-# Installer git et openssh-client pour SSH
-RUN apt-get update && apt-get install -y openssh-client git && rm -rf /var/lib/apt/lists/*
-
-# Configuration Git
-RUN git config --global user.email "docker@cardmanager.local" && \
-    git config --global user.name "Docker Builder"
-
-# Copier les clés SSH depuis le contexte de build
-COPY ./docker/ssh-keys/ /root/.ssh/
-
-# Configurer les permissions SSH
-RUN chmod 700 /root/.ssh && \
-    chmod 600 /root/.ssh/bitbucket_ed25519 && \
-    chmod 644 /root/.ssh/bitbucket_ed25519.pub && \
-    chmod 644 /root/.ssh/config && \
-    ssh-keyscan -H bitbucket.org >> /root/.ssh/known_hosts && \
-    chmod 644 /root/.ssh/known_hosts
-
-# Répertoire de travail
-WORKDIR /usr/src/app
-
-# Créer la structure Maven parent
-COPY ./docker/cardmanager-parent.xml ./pom.xml
-
-# Cloner Mason d'abord (dépendance)
-RUN git clone --depth 1 --branch ${MASON_BRANCH} ${MASON_REPO_URL} mason
-
-# Cloner Painter
-RUN git clone --depth 1 --branch ${PAINTER_BRANCH} ${PAINTER_REPO_URL} painter
-
-# Construire le parent
-RUN mvn install -N
-
-# Construire Mason (dépendance de Painter)
-WORKDIR /usr/src/app/mason
-RUN mvn clean install -DskipTests -B
-
-# Construire Painter
-WORKDIR /usr/src/app/painter
-RUN mvn clean package -DskipTests -B
-
-# Image finale pour l'exécution
-FROM eclipse-temurin:21-jre-alpine
-
-LABEL maintainer="cardmanager@example.com"
-LABEL description="Painter Service - Original Version"
-
-# Installer wget pour le health check
-RUN apk add --no-cache wget
-
-# Répertoire de travail
-WORKDIR /app
-
-# Copier le JAR principal de Painter
-COPY --from=builder /usr/src/app/painter/painter/target/*.jar app.jar
-
-# Créer le dossier pour les images
-RUN mkdir -p /app/images
-
-# Configuration JVM optimisée
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -Djava.security.egd=file:/dev/./urandom"
-
-# Variables d'environnement pour Painter
-ENV PAINTER_IMAGE_STORAGE_PATH="/app/images"
-ENV SPRING_PROFILES_ACTIVE="docker"
-
-# Port d'exposition
-EXPOSE 8081
-
-# Health check basique
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-    CMD wget --quiet --tries=1 --spider http://localhost:8081/actuator/health || exit 1
-
-# Point d'entrée
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
-EOF
-
-    echo "✅ Dockerfile basique créé"
-fi
-
-# 5. Reconstruction avec la configuration originale
-echo ""
-echo "5. Test avec la configuration originale..."
-
-echo "🛑 Arrêt des services actuels..."
+# Arrêter et redémarrer avec la nouvelle config
 docker-compose down
+docker-compose -f docker-compose-force-painter.yml up -d
 
-echo "🔨 Construction avec la configuration originale..."
-docker-compose build --no-cache painter
+echo -e "${YELLOW}6. Attente du redémarrage (90 secondes)...${NC}"
+sleep 90
 
-if [ $? -eq 0 ]; then
-    echo "✅ Construction réussie"
+echo -e "${YELLOW}7. Tests post-correction...${NC}"
 
-    echo "🚀 Démarrage avec la configuration originale..."
-    docker-compose up -d
+echo -e "${BLUE}📊 État des services :${NC}"
+docker-compose -f docker-compose-force-painter.yml ps
 
-    echo "⏳ Attente du démarrage (90 secondes)..."
-    sleep 90
+echo ""
+echo -e "${BLUE}🔍 Test réseau depuis GestionCarte :${NC}"
+docker exec cardmanager-gestioncarte sh -c "
+echo 'Test 1: wget painter:8081'
+wget -qO- --timeout=5 http://painter:8081/ 2>/dev/null && echo 'SUCCESS' || echo 'FAILED'
 
-    # 6. Tests de la configuration originale
-    echo ""
-    echo "6. Tests de la configuration originale..."
+echo 'Test 2: Environnement Painter'
+env | grep -i painter | head -5
+"
 
-    echo "📊 État des services :"
-    docker-compose ps
+echo ""
+echo -e "${YELLOW}8. Surveillance des logs pour vérifier la correction...${NC}"
+echo -e "${BLUE}Surveillance pendant 15 secondes - si 'localhost:8081' apparaît encore, nous devrons modifier le code source...${NC}"
 
-    echo ""
-    echo "🔍 Tests des endpoints originaux :"
+# Surveiller les logs pour voir si localhost apparaît encore
+timeout 15 docker-compose -f docker-compose-force-painter.yml logs -f gestioncarte 2>/dev/null | grep -E "(localhost|painter|8081)" || true
 
-    # Test health check
-    HEALTH=$(curl -s --max-time 15 http://localhost:8081/actuator/health 2>/dev/null || echo "ECHEC")
-    echo "   Health check: $HEALTH"
+echo ""
+echo -e "${YELLOW}9. Test d'upload pour déclencher l'erreur...${NC}"
 
-    # Test info
-    INFO=$(curl -s --max-time 15 http://localhost:8081/actuator/info 2>/dev/null || echo "ECHEC")
-    echo "   Info: $INFO"
-
-    # Test metrics
-    METRICS=$(curl -s --max-time 15 http://localhost:8081/actuator/metrics 2>/dev/null || echo "ECHEC")
-    echo "   Metrics: ${METRICS:0:100}..."
-
-    # Test nginx
-    NGINX=$(curl -s --max-time 10 http://localhost:8082/ 2>/dev/null || echo "ECHEC")
-    echo "   Nginx: ${NGINX:0:200}..."
-
-    # Test images
-    IMAGES=$(curl -s --max-time 10 http://localhost:8082/images/ 2>/dev/null || echo "ECHEC")
-    echo "   Images: ${IMAGES:0:200}..."
-
-    echo ""
-    echo "🔍 Recherche d'endpoints d'upload natifs..."
-
-    # Tester des endpoints possibles dans le projet original
-    for endpoint in "/upload" "/api/upload" "/files/upload" "/image/upload" "/painter/upload"; do
-        echo -n "   Testing $endpoint: "
-        RESULT=$(curl -s --max-time 5 http://localhost:8081$endpoint 2>/dev/null || echo "ECHEC")
-        if echo "$RESULT" | grep -q -v "404"; then
-            echo "✅ Endpoint trouvé !"
-            echo "      Response: ${RESULT:0:100}..."
-        else
-            echo "❌ Non disponible"
-        fi
-    done
-
-    echo ""
-    echo "🔍 Test de l'interface GestionCarte..."
-
-    GESTION_APP=$(curl -s --max-time 10 http://localhost:8080 2>/dev/null || echo "ECHEC")
-    if echo "$GESTION_APP" | grep -q -E "(html|HTML|upload|Upload)"; then
-        echo "✅ Interface GestionCarte accessible"
-        echo "💡 Vérifiez http://localhost:8080 pour voir s'il y a une fonction d'upload"
-    else
-        echo "⚠️ Interface GestionCarte : ${GESTION_APP:0:100}..."
-    fi
-
+# Créer un fichier test et essayer l'upload
+echo "Test upload CardManager" > /tmp/test_card.txt
+echo -n "Test upload API : "
+UPLOAD_TEST=$(curl -s -X PUT -F "file=@/tmp/test_card.txt" http://localhost:8080/api/pokemon-cards/1/image 2>&1)
+if echo "$UPLOAD_TEST" | grep -q "Connection refused"; then
+    echo -e "${RED}ÉCHEC - localhost encore utilisé${NC}"
+    echo -e "${YELLOW}💡 Solution alternative nécessaire : modifier le code source ou reconstruire l'image${NC}"
 else
-    echo "❌ Échec de construction avec la configuration originale"
-    echo "Logs d'erreur :"
-    docker-compose logs painter 2>&1 | tail -15
+    echo -e "${GREEN}SUCCÈS - Plus d'erreur localhost${NC}"
+fi
+
+rm -f /tmp/test_card.txt
+
+echo ""
+echo -e "${BLUE}💡 ANALYSE DES RÉSULTATS :${NC}"
+echo "========================================="
+
+# Vérifier si localhost apparaît encore dans les logs récents
+RECENT_LOGS=$(docker-compose -f docker-compose-force-painter.yml logs --tail=20 gestioncarte 2>/dev/null)
+if echo "$RECENT_LOGS" | grep -q "localhost.*8081"; then
+    echo -e "${RED}❌ PROBLÈME PERSISTANT${NC}"
+    echo "Le code Java GestionCarte a une URL hardcodée 'localhost:8081'"
+    echo ""
+    echo -e "${YELLOW}🔧 SOLUTIONS POSSIBLES :${NC}"
+    echo "1. Modifier le code source dans les dépôts Bitbucket"
+    echo "2. Reconstruire l'image avec un patch"
+    echo "3. Utiliser un proxy réseau interne"
+    echo "4. Modifier les fichiers de config dans le conteneur"
+else
+    echo -e "${GREEN}✅ PROBLÈME RÉSOLU${NC}"
+    echo "La configuration forcée fonctionne !"
 fi
 
 echo ""
-echo "🎯 RÉSUMÉ DE LA RESTAURATION :"
-echo "============================="
+read -p "Voulez-vous appliquer cette configuration définitivement ? (y/N): " -n 1 -r
+echo ""
 
-if echo "$HEALTH" | grep -q '"status":"UP"'; then
-    echo "✅ Configuration originale restaurée et fonctionnelle"
-    echo "✅ Endpoints Actuator disponibles (/actuator/health, /actuator/info, /actuator/metrics)"
-    echo "✅ Communication avec Painter opérationnelle"
-
-    if echo "$NGINX" | grep -q -E "(CardManager|Images)"; then
-        echo "✅ Nginx Images configuré correctement"
-    else
-        echo "⚠️ Nginx Images nécessite vérification"
-    fi
-
-    echo ""
-    echo "🔍 PROCHAINES ÉTAPES :"
-    echo "====================="
-    echo "1. Vérifiez l'interface : http://localhost:8080"
-    echo "2. Cherchez une fonction d'upload dans l'interface web"
-    echo "3. Si pas d'upload natif, le projet original n'en a peut-être pas"
-    echo "4. Dans ce cas, nos contrôleurs custom étaient la bonne approche"
-    echo ""
-    echo "💡 HYPOTHÈSE :"
-    echo "   Le projet original fonctionne mais n'a peut-être pas d'upload d'images"
-    echo "   L'upload se fait peut-être via l'interface GestionCarte directement"
-
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    cp docker-compose.yml "docker-compose.yml.backup-pre-force-$(date +%Y%m%d-%H%M%S)"
+    cp docker-compose-force-painter.yml docker-compose.yml
+    echo -e "${GREEN}✅ Configuration avec override forcé appliquée${NC}"
+    echo -e "${YELLOW}💾 Sauvegarde créée${NC}"
 else
-    echo "❌ Problème avec la configuration originale"
-    echo "💡 Le problème est plus profond qu'une simple configuration"
+    echo -e "${YELLOW}Configuration disponible dans docker-compose-force-painter.yml${NC}"
 fi
-
-echo ""
-echo "📱 URLs à tester :"
-echo "=================="
-echo "• Application   : http://localhost:8080"
-echo "• Painter Health: http://localhost:8081/actuator/health"
-echo "• Painter Info  : http://localhost:8081/actuator/info"
-echo "• Images        : http://localhost:8082/images/"
-
-echo ""
-echo "✅ Restauration terminée !"

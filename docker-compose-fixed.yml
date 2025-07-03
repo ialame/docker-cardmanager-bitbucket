@@ -3,12 +3,12 @@ services:
     image: mariadb:11.2
     container_name: cardmanager-mariadb
     environment:
-      MARIADB_ROOT_PASSWORD: root_password
-      MARIADB_DATABASE: dev
-      MARIADB_USER: ia
-      MARIADB_PASSWORD: foufafou
-      MARIADB_CHARACTER_SET_SERVER: utf8mb4
-      MARIADB_COLLATION_SERVER: utf8mb4_unicode_ci
+      MYSQL_ROOT_PASSWORD: root_password  # Cohérent avec healthcheck
+      MYSQL_DATABASE: dev
+      MYSQL_USER: ia
+      MYSQL_PASSWORD: foufafou
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
     ports:
       - "3308:3306"
     volumes:
@@ -17,6 +17,12 @@ services:
     networks:
       - cardmanager-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
 
   painter:
     build:
@@ -24,7 +30,8 @@ services:
       dockerfile: docker/painter/Dockerfile
     container_name: cardmanager-painter
     depends_on:
-      - mariadb-standalone
+      mariadb-standalone:
+        condition: service_healthy
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
@@ -32,9 +39,6 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - PAINTER_IMAGE_STORAGE_PATH=/app/images
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
-      - SERVER_PORT=8081
-      - SERVER_ADDRESS=0.0.0.0
     ports:
       - "8081:8081"
     volumes:
@@ -49,41 +53,18 @@ services:
       dockerfile: docker/gestioncarte/Dockerfile
     container_name: cardmanager-gestioncarte
     depends_on:
-      - mariadb-standalone
-      - painter
+      mariadb-standalone:
+        condition: service_healthy
+      painter:
+        condition: service_started
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mariadb://mariadb-standalone:3306/dev
       - SPRING_DATASOURCE_USERNAME=ia
       - SPRING_DATASOURCE_PASSWORD=foufafou
       - SPRING_PROFILES_ACTIVE=docker
-
-      # FORCER TOUTES LES VARIANTES POSSIBLES D'URL PAINTER
       - PAINTER_SERVICE_URL=http://painter:8081
-      - PAINTER_API_BASE_URL=http://painter:8081
-      - PAINTER_BASE_URL=http://painter:8081
-      - PAINTER_URL=http://painter:8081
-      - PAINTER_HOST=painter
-      - PAINTER_PORT=8081
-      - PAINTER_ENDPOINT=http://painter:8081
-      - PAINTER_API_URL=http://painter:8081
-      - PAINTER_SERVICE_HOST=painter
-      - PAINTER_SERVICE_PORT=8081
-
-      # Override des configurations Spring qui pourraient utiliser localhost
-      - SPRING_PAINTER_SERVICE_URL=http://painter:8081
-      - SPRING_PAINTER_BASE_URL=http://painter:8081
-      - SPRING_PAINTER_URL=http://painter:8081
-
-      # Configuration générale Spring
       - SPRING_LIQUIBASE_ENABLED=false
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
-      - SERVER_PORT=8080
-      - SERVER_ADDRESS=0.0.0.0
-
-      # Force la configuration réseau
-      - JAVA_OPTS=-Dpainter.service.url=http://painter:8081 -Dpainter.base.url=http://painter:8081
-
     ports:
       - "8080:8080"
     networks:
